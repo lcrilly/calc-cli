@@ -3,6 +3,8 @@ name = "calc"
 version = "0.1.0"
 edition = "2024"
 description = "Evaluate arithmetic expressions without shell quoting"
+license = "MIT"
+repository = "https://github.com/lcrilly/calc-cli"
 
 [dependencies]
 
