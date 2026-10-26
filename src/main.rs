@@ -9,19 +9,23 @@ use std::process::ExitCode;
 use format::Precision;
 
 const USAGE: &str = "\
-calc - evaluate arithmetic expressions without shell quoting
+calc - evaluate arithmetic expressions
 
 Usage:
   calc [--precision=N|max] EXPRESSION...
-  echo EXPRESSION | calc [--precision=N|max]
+  echo EXPRESSION | calc [--precision=N|max] [PARTIAL EXPRESSION...]
+
+In most cases shell quoting and escaping can be avoided.
 
 Operators:  + -  x * ×  ÷ /  ^
-Brackets:   {} or ()        (nestable; () needs quoting in the shell)
+Brackets:   {} or ()
 Functions:  √ or sqrt
 Constants:  π or pi
+
 Spaces are ignored and arguments are joined, so `calc 2 x {3 + 4}` works.
 Adjacent terms multiply: 2π, 3√2, 2{1+1}.
 With no expression arguments, each line of stdin is evaluated.
+Compound expressions combine stdin with PARTIAL EXPRESSION.
 
 Options (must come first):
   -p, --precision=N|max  decimal places for non-terminating results
@@ -89,7 +93,32 @@ fn calculate(expression: &str, precision: Precision) -> Result<String, Error> {
     Ok(format::format(eval.value, eval.decimal_input, precision))
 }
 
-fn run_stdin(precision: Precision) -> io::Result<ExitCode> {
+/// True when the expression starts with an operator, so it continues a value read from stdin.
+/// A leading '-' is left out: `calc -2` is a negative number, and must not wait on stdin.
+fn is_continuation(expression: &str) -> bool {
+    expression.trim_start().starts_with(['+', '*', 'x', 'X', '×', '/', '÷', '^'])
+}
+
+/// True when the expression ends with an operator or function, so a value read from stdin completes it.
+fn awaits_operand(expression: &str) -> bool {
+    let expression = expression.trim_end();
+    expression.ends_with(['+', '-', '−', '*', 'x', 'X', '×', '/', '÷', '^', '√']) || expression.ends_with("sqrt")
+}
+
+/// Builds the expression for one stdin line, placing it wherever the arguments lack an operand.
+fn combine(line: String, expression: &str) -> String {
+    if expression.is_empty() {
+        return line;
+    }
+    // Bracket the line so it acts as a single value: `-2` then `^2` is 4, not -4.
+    let operand = format!("{{{line}}}");
+    let before = if is_continuation(expression) { operand.as_str() } else { "" };
+    let after = if awaits_operand(expression) { operand.as_str() } else { "" };
+    format!("{before}{expression}{after}")
+}
+
+/// Evaluates each line of stdin, combined with `expression` if it isn't empty.
+fn run_stdin(precision: Precision, expression: &str) -> io::Result<ExitCode> {
     let stdout = io::stdout();
     let mut out = BufWriter::new(stdout.lock());
     let mut status = ExitCode::SUCCESS;
@@ -104,7 +133,7 @@ fn run_stdin(precision: Precision) -> io::Result<ExitCode> {
         if line.trim().is_empty() {
             continue;
         }
-        match calculate(&line, precision) {
+        match calculate(&combine(line, expression), precision) {
             Ok(result) => writeln!(out, "{result}")?,
             Err(e) => {
                 // Keep stdout and stderr in order when both go to a terminal.
@@ -138,15 +167,20 @@ fn run(args: &[String]) -> io::Result<ExitCode> {
         }
     };
 
-    if rest.is_empty() {
-        if io::stdin().is_terminal() {
-            eprintln!("{USAGE}");
-            return Ok(ExitCode::from(2));
-        }
-        return run_stdin(precision);
+    let expression = rest.concat();
+    let stdin_is_terminal = io::stdin().is_terminal();
+    if rest.is_empty() && stdin_is_terminal {
+        eprintln!("{USAGE}");
+        return Ok(ExitCode::from(2));
+    }
+    // Only read stdin when the arguments are missing an operand, so `calc 1+2`
+    // in a `while read` loop doesn't swallow the loop's input.
+    let incomplete = is_continuation(&expression) || awaits_operand(&expression);
+    if rest.is_empty() || (!stdin_is_terminal && incomplete) {
+        return run_stdin(precision, &expression);
     }
 
-    match calculate(&rest.concat(), precision) {
+    match calculate(&expression, precision) {
         Ok(result) => print(&result),
         Err(e) => {
             eprintln!("calc: {e}");

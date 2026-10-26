@@ -3,23 +3,25 @@
 `calc` is a powerful and convenient command line tool for evaluating arithmetic expressions in a shell/terminal environment. Notably, alternatives are provided for characters that typically require escaping or quoting.
 
 ```shell
-$ calc 2x{3+4}
+$ calc 2x{3+4}                     # Easy bracketing
 14
-$ calc {{2+3}x{4-1}}÷5
+$ calc {{2+3}x{4-1}}÷5             # Nesting
 3
-$ calc 1/3
+$ calc 1/3                         # Default precision
 0.33333
-$ calc -p=10 √2
+$ calc -p=10 √2                    # Configurable precision
 1.4142135624
-$ echo 2π | calc --precision=max
+$ echo 2π | calc --precision=max   # Receive expressions from stdin (and per-architecture precision)
 6.283185307179586
+$ seq 1 10 | calc 2^ | tr '\n' ,   # Compound expressions that combine stdin and command line arguments
+2,4,8,16,32,64,128,256,512,1024
 ```
 
 ## Constructing expressions
 
 | Symbol      | Meaning                   |
 |-------------|---------------------------|
-| `+` , `-`   | add , subtract             |
+| `+` , `-`   | add , subtract            |
 | `x` `*` `×` | multiply                  |
 | `÷` `/`     | divide                    |
 | `^`         | power (right-associative) |
@@ -31,6 +33,9 @@ $ echo 2π | calc --precision=max
 - Adjacent terms multiply at the same precedence as `x`: `2π`, `3√2`, `6÷2{1+2}` = 9.
 - `√` binds to the term right after it: `√4^2` is `(√4)^2`; write `√{4^2}` for the other reading.
 - With no expression arguments each line of stdin is evaluated; a failing line goes to stderr and the exit status is 1.
+- Values received from stdin can be combined with arguments to chain compound expressions.
+  - Arguments that start with an operator (`+ x * × ÷ / ^`) continue each line of stdin.
+  - Arguments that end with an operator or function apply stdin as their last operand.
 
 ## Output
 
