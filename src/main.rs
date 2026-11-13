@@ -17,13 +17,14 @@ Usage:
 
 In most cases shell quoting and escaping can be avoided.
 
-Operators:  + -  x * ×  ÷ /  ^
+Operators:  + -  x * ×  ÷ /  % mod  ^
 Brackets:   {} or ()
 Functions:  √ or sqrt
 Constants:  π or pi
 
 Spaces are ignored and arguments are joined, so `calc 2 x {3 + 4}` works.
 Adjacent terms multiply: 2π, 3√2, 2{1+1}.
+Modulo takes the sign of the divisor: -7 mod 3 is 2.
 With no expression arguments, each line of stdin is evaluated.
 Compound expressions combine stdin with PARTIAL EXPRESSION.
 
@@ -96,13 +97,16 @@ fn calculate(expression: &str, precision: Precision) -> Result<String, Error> {
 /// True when the expression starts with an operator, so it continues a value read from stdin.
 /// A leading '-' is left out: `calc -2` is a negative number, and must not wait on stdin.
 fn is_continuation(expression: &str) -> bool {
-    expression.trim_start().starts_with(['+', '*', 'x', 'X', '×', '/', '÷', '^'])
+    let expression = expression.trim_start();
+    expression.starts_with(['+', '*', 'x', 'X', '×', '/', '÷', '%', '^']) || expression.starts_with("mod")
 }
 
 /// True when the expression ends with an operator or function, so a value read from stdin completes it.
 fn awaits_operand(expression: &str) -> bool {
     let expression = expression.trim_end();
-    expression.ends_with(['+', '-', '−', '*', 'x', 'X', '×', '/', '÷', '^', '√']) || expression.ends_with("sqrt")
+    expression.ends_with(['+', '-', '−', '*', 'x', 'X', '×', '/', '÷', '%', '^', '√'])
+        || expression.ends_with("mod")
+        || expression.ends_with("sqrt")
 }
 
 /// Builds the expression for one stdin line, placing it wherever the arguments lack an operand.

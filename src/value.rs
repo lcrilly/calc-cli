@@ -65,6 +65,13 @@ impl Ratio {
         Ratio::new(self.den, self.num)
     }
 
+    /// Remainder of floored division, so it takes the sign of `rhs`. `rhs` must be non-zero.
+    fn checked_rem(self, rhs: Ratio) -> Option<Ratio> {
+        let q = self.checked_mul(rhs.checked_recip()?)?;
+        let floor = Ratio { num: q.num.div_euclid(q.den), den: 1 };
+        self.checked_add(rhs.checked_mul(floor)?.checked_neg()?)
+    }
+
     fn checked_neg(self) -> Option<Ratio> {
         Some(Ratio { num: self.num.checked_neg()?, den: self.den })
     }
@@ -146,6 +153,21 @@ impl Value {
             return Ok(Value::Exact(r));
         }
         approx(self.to_f64() / rhs.to_f64())
+    }
+
+    /// Modulo with the sign of the divisor (floored, as in Python): `-7 mod 3` is 2.
+    pub fn rem(self, rhs: Value) -> Result<Value, Error> {
+        if rhs.is_zero() {
+            return Err(Error::new("modulo by zero"));
+        }
+        if let (Value::Exact(a), Value::Exact(b)) = (self, rhs)
+            && let Some(r) = a.checked_rem(b)
+        {
+            return Ok(Value::Exact(r));
+        }
+        let (a, b) = (self.to_f64(), rhs.to_f64());
+        let r = a % b;
+        approx(if r != 0.0 && (r < 0.0) != (b < 0.0) { r + b } else { r })
     }
 
     pub fn pow(self, exp: Value) -> Result<Value, Error> {

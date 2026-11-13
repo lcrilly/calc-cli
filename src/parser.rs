@@ -2,7 +2,7 @@
 //!
 //! Grammar (lowest to highest precedence):
 //!   expr    := term (('+' | '-') term)*
-//!   term    := unary (('×' | '÷') unary | unary)*     -- adjacency is implicit ×
+//!   term    := unary (('×' | '÷' | '%') unary | unary)*  -- adjacency is implicit ×
 //!   unary   := ('+' | '-') unary | power
 //!   power   := root ('^' unary)?                        -- right-associative
 //!   root    := '√' ('+' | '-')* root | primary
@@ -18,6 +18,7 @@ enum Tok {
     Minus,
     Mul,
     Div,
+    Mod,
     Pow,
     Sqrt,
     Pi,
@@ -90,6 +91,8 @@ fn tokenize(input: &str) -> Result<(Vec<Token>, bool), Error> {
 
         let (tok, len) = if starts_with(i, "sqrt") {
             (Tok::Sqrt, 4)
+        } else if starts_with(i, "mod") {
+            (Tok::Mod, 3)
         } else if starts_with(i, "pi") {
             (Tok::Pi, 2)
         } else {
@@ -98,6 +101,7 @@ fn tokenize(input: &str) -> Result<(Vec<Token>, bool), Error> {
                 '-' | '−' => Tok::Minus,
                 '*' | 'x' | 'X' | '×' => Tok::Mul,
                 '/' | '÷' => Tok::Div,
+                '%' => Tok::Mod,
                 '^' => Tok::Pow,
                 '√' => Tok::Sqrt,
                 'π' => Tok::Pi,
@@ -171,6 +175,10 @@ impl Parser {
                 Some(Tok::Div) => {
                     self.i += 1;
                     value = value.div(self.unary()?)?;
+                }
+                Some(Tok::Mod) => {
+                    self.i += 1;
+                    value = value.rem(self.unary()?)?;
                 }
                 // Implicit multiplication: 2π, 3√2, 2{1+1}, {1+1}{2+2}
                 Some(Tok::Num(_) | Tok::Pi | Tok::Sqrt | Tok::Open(_)) => {

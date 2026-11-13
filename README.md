@@ -24,6 +24,7 @@ $ seq 1 10 | calc 2^ | tr '\n' ,   # Compound expressions that combine stdin and
 | `+` , `-`   | add , subtract            |
 | `x` `*` `×` | multiply                  |
 | `÷` `/`     | divide                    |
+| `%` `mod`   | modulo (remainder)        |
 | `^`         | power (right-associative) |
 | `{}` `()`   | brackets, nestable        |
 | `√` `sqrt`  | square root               |
@@ -31,10 +32,11 @@ $ seq 1 10 | calc 2^ | tr '\n' ,   # Compound expressions that combine stdin and
 
 - Spaces are ignored and multiple arguments are joined, so `calc 1 000 x 3` is `3000`.
 - Adjacent terms multiply at the same precedence as `x`: `2π`, `3√2`, `6÷2{1+2}` = 9.
+- `%`/`mod` shares precedence with `x` and `÷`, and the result takes the sign of the divisor (floored, as in Python): `-7 mod 3` = 2, `7%-3` = -2. Non-integers work too: `5.5 mod 2` = `1.5`.
 - `√` binds to the term right after it: `√4^2` is `(√4)^2`; write `√{4^2}` for the other reading.
 - With no expression arguments each line of stdin is evaluated; a failing line goes to stderr and the exit status is 1.
 - Values received from stdin can be combined with arguments to chain compound expressions.
-  - Arguments that start with an operator (`+ x * × ÷ / ^`) continue each line of stdin.
+  - Arguments that start with an operator (`+ x * × ÷ / % ^ mod`) continue each line of stdin.
   - Arguments that end with an operator or function apply stdin as their last operand.
 
 ## Output
