@@ -1,6 +1,8 @@
 //! Numbers are exact rationals while possible and fall back to f64 once a result
 //! is irrational (π, non-perfect square roots) or overflows i128.
 
+use std::cmp::Ordering;
+
 use crate::Error;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -89,7 +91,7 @@ impl Ratio {
     }
 }
 
-fn approx(f: f64) -> Result<Value, Error> {
+pub fn approx(f: f64) -> Result<Value, Error> {
     if f.is_nan() {
         Err(Error::new("undefined result"))
     } else if f.is_infinite() {
@@ -114,7 +116,7 @@ impl Value {
         }
     }
 
-    fn is_negative(self) -> bool {
+    pub fn is_negative(self) -> bool {
         match self {
             Value::Exact(r) => r.num < 0,
             Value::Approx(f) => f < 0.0,
@@ -181,6 +183,53 @@ impl Value {
             return Ok(Value::Exact(r));
         }
         approx(self.to_f64().powf(exp.to_f64()))
+    }
+
+    pub fn from_int(n: i128) -> Value {
+        Value::Exact(Ratio { num: n, den: 1 })
+    }
+
+    /// Total order for sorting; exact values compare exactly where the products fit.
+    pub fn cmp(self, rhs: Value) -> Ordering {
+        if let (Value::Exact(a), Value::Exact(b)) = (self, rhs)
+            && let (Some(l), Some(r)) = (a.num.checked_mul(b.den), b.num.checked_mul(a.den))
+        {
+            return l.cmp(&r);
+        }
+        self.to_f64().total_cmp(&rhs.to_f64())
+    }
+
+    pub fn abs(self) -> Result<Value, Error> {
+        if self.is_negative() { self.neg() } else { Ok(self) }
+    }
+
+    pub fn floor(self) -> Result<Value, Error> {
+        match self {
+            Value::Exact(r) => Ok(Value::from_int(r.num.div_euclid(r.den))),
+            Value::Approx(f) => approx(f.floor()),
+        }
+    }
+
+    pub fn ceil(self) -> Result<Value, Error> {
+        self.neg()?.floor()?.neg()
+    }
+
+    /// Rounds half away from zero, as spreadsheets do.
+    pub fn round(self) -> Result<Value, Error> {
+        match self {
+            Value::Exact(r) => {
+                let rounded = || {
+                    let n = r.num.unsigned_abs().checked_mul(2)?.checked_add(r.den as u128)?;
+                    let q = i128::try_from(n / (r.den as u128 * 2)).ok()?;
+                    Some(if r.num < 0 { -q } else { q })
+                };
+                match rounded() {
+                    Some(q) => Ok(Value::from_int(q)),
+                    None => approx(r.to_f64().round()),
+                }
+            }
+            Value::Approx(f) => approx(f.round()),
+        }
     }
 
     pub fn neg(self) -> Result<Value, Error> {
