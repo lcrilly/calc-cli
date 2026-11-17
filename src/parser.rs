@@ -7,6 +7,9 @@
 //!   power   := root ('^' unary)?                        -- right-associative
 //!   root    := '√' ('+' | '-')* root | primary
 //!   primary := number | 'π' | '(' expr ')'
+//!
+//! A closing bracket with no opening bracket before it implies one at the very
+//! start of the expression: `2+4+8}/2` is `{2+4+8}/2`.
 
 use crate::Error;
 use crate::value::{Ratio, Value};
@@ -40,10 +43,11 @@ pub struct Evaluation {
 }
 
 pub fn evaluate(input: &str) -> Result<Evaluation, Error> {
-    let (tokens, decimal_input) = tokenize(input)?;
+    let (mut tokens, decimal_input) = tokenize(input)?;
     if tokens.is_empty() {
         return Err(Error::new("empty expression"));
     }
+    infer_opening_brackets(&mut tokens);
     let mut parser = Parser { tokens, i: 0 };
     let value = parser.expr()?;
     if let Some(t) = parser.tokens.get(parser.i) {
@@ -118,6 +122,42 @@ fn tokenize(input: &str) -> Result<(Vec<Token>, bool), Error> {
         i += len;
     }
     Ok((tokens, decimal_input))
+}
+
+/// Adds an opening bracket at the start for each closing bracket that has none.
+///
+/// An unmatched closer can only occur when every bracket before it is balanced,
+/// so the inferred opener always pairs with exactly that closer. Later closers
+/// get outer brackets: `1+2)x3}` becomes `{(1+2)x3}`. A closer that mismatches
+/// an open bracket (`{1+2)`) is left for the parser to report.
+fn infer_opening_brackets(tokens: &mut Vec<Token>) {
+    let mut open = Vec::new();
+    let mut inferred = Vec::new();
+    for token in tokens.iter() {
+        match token.tok {
+            Tok::Open(close) => open.push(close),
+            Tok::Close(c) if open.is_empty() => inferred.push((c, token.pos)),
+            Tok::Close(c) if open.last() == Some(&c) => {
+                open.pop();
+            }
+            Tok::Close(_) => break,
+            _ => {}
+        }
+    }
+    let opening = |c: char| match c {
+        ')' => '(',
+        '}' => '{',
+        _ => '[',
+    };
+    // The last unmatched closer is outermost, so its opener goes first.
+    tokens.splice(
+        0..0,
+        inferred.into_iter().rev().map(|(c, pos)| Token {
+            tok: Tok::Open(c),
+            text: opening(c).to_string(),
+            pos,
+        }),
+    );
 }
 
 /// Parses a decimal literal exactly; falls back to f64 if it doesn't fit in i128.
@@ -257,5 +297,47 @@ impl Parser {
             }
             _ => Err(Error::new(format!("unexpected '{}' at position {pos}", token.text))),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn eval(input: &str) -> String {
+        match evaluate(input) {
+            Ok(e) => format!("{:?}", e.value),
+            Err(e) => format!("error: {e}"),
+        }
+    }
+
+    fn same(a: &str, b: &str) {
+        assert_eq!(eval(a), eval(b), "{a} vs {b}");
+    }
+
+    #[test]
+    fn unmatched_closer_wraps_prefix() {
+        same("2+4+8}/2", "7");
+        same("1+2x3}", "7");
+        same("-2}^2", "4");
+        same("2+4}3", "18");
+        same("2}{3}", "6");
+    }
+
+    #[test]
+    fn nesting() {
+        same("{1+2}+3}x2", "12");
+        same("1+2}x3}+1", "{{1+2}x3}+1");
+        same("1+2)x3}", "{(1+2)x3}");
+        same("1+{2x3}}x2", "14");
+        same("{1}+4}/2", "2.5");
+    }
+
+    #[test]
+    fn errors_remain() {
+        assert!(eval("{1+2)").starts_with("error: expected '}'"));
+        assert!(eval("{1+2)x3}").starts_with("error"));
+        assert!(eval("}").starts_with("error: unexpected '}' at position 1"));
+        assert!(eval("{1+2").starts_with("error: missing '}'"));
     }
 }

@@ -7,6 +7,8 @@ $ calc 2x{3+4}                     # Easy bracketing
 14
 $ calc {{2+3}x{4-1}}÷5             # Nesting
 3
+$ calc 2+4+8}/2                    # Unmatched closing bracket wraps everything before it
+7
 $ calc 1/3                         # Default precision
 0.33333
 $ calc -p=10 √2                    # Configurable precision
@@ -33,11 +35,16 @@ $ seq 1 10 | calc 2^ | tr '\n' ,   # Compound expressions that combine stdin and
 - Spaces are ignored and multiple arguments are joined, so `calc 1 000 x 3` is `3000`.
 - Adjacent terms multiply at the same precedence as `x`: `2π`, `3√2`, `6÷2{1+2}` = 9.
 - `%`/`mod` shares precedence with `x` and `÷`, and the result takes the sign of the divisor (floored, as in Python): `-7 mod 3` = 2, `7%-3` = -2. Non-integers work too: `5.5 mod 2` = `1.5`.
+- A closing bracket with no opening bracket implies one at the very start, so `2+4+8}/2` is `{2+4+8}/2` = 7.
+  It wraps the whole of what comes before, not just the last term: `1+2x3}` = 7, `-2}^2` = 4.
+  Repeat it to nest outwards: `1+2}x3}+1` is `{{1+2}x3}+1` = 10.
+  A closer that doesn't match a bracket that is already open (`{1+2)`) is still an error.
 - `√` binds to the term right after it: `√4^2` is `(√4)^2`; write `√{4^2}` for the other reading.
 - With no expression arguments each line of stdin is evaluated; a failing line goes to stderr and the exit status is 1.
 - Values received from stdin can be combined with arguments to chain compound expressions.
   - Arguments that start with an operator (`+ x * × ÷ / % ^ mod`) continue each line of stdin.
   - Arguments that end with an operator or function apply stdin as their last operand.
+  - An unmatched closing bracket wraps the stdin value too: `seq 1 3 | calc +4}/2` gives `2.5`, `3`, `3.5`.
 
 ## Output
 
@@ -57,7 +64,9 @@ shortest round-trip form).
 
 - zsh rejects a `}` that ends a word when its `{` is in a different word, so
   `calc 2x{3 + 4}` fails in zsh before `calc` runs. Keep each brace group free
-  of spaces (`calc 2 x {3+4}`) or quote it.
+  of spaces (`calc 2 x {3+4}`) or quote it. The same may apply to an
+  unmatched `}` at the end of a word (`calc 2+4+8} /2`); keep it mid-word
+  (`calc 2+4+8}/2`) or quote it. bash treats a lone `}` as literal.
 - `(` `)` and `*` still need quoting, or use the `{}` and `x` equivalents.
 - Arguments and stdin must be UTF-8; in a non-UTF-8 locale
   `calc` reports an error rather than misreading `÷`, `√` or `π`.

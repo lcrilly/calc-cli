@@ -24,6 +24,7 @@ Constants:  π or pi
 
 Spaces are ignored and arguments are joined, so `calc 2 x {3 + 4}` works.
 Adjacent terms multiply: 2π, 3√2, 2{1+1}.
+An unmatched closing bracket wraps everything before it: 2+4+8}/2 is 7.
 Modulo takes the sign of the divisor: -7 mod 3 is 2.
 With no expression arguments, each line of stdin is evaluated.
 Compound expressions combine stdin with PARTIAL EXPRESSION.
