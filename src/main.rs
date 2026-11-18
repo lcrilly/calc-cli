@@ -14,47 +14,43 @@ use parser::{Expression, Syntax};
 use value::Value;
 
 const USAGE: &str = "\
-calc - evaluate arithmetic expressions and lists of numbers
+calc - evaluate arithmetic expressions on the command line
+       operate on (lists of) numbers from stdin
 
 Usage:
   calc [OPTIONS] EXPRESSION...
   ... | calc [OPTIONS] [PARTIAL EXPRESSION...]
 
-In most cases shell quoting and escaping can be avoided.
-
-Operators:  + -  x * × · •  ÷ /  % mod  ^  ² ³
+Operators:  +  -  x * × · •  ÷ /  % mod  ^  ² ³
 Brackets:   {} or () or []
-Roots:      √ or sqrt
-Constants:  π or pi
-Lists:      1 2 3  or  1,2,3   (1 -2 is a list; 1 - 2 is subtraction)
+Symbols:    π (pi)  @ (stdin)
+Lists:      1 2 3  or  1,2,3
 Ranges:     1..10 or 1…10
-Functions:  sum ∑  product prod ∏  avg mean average x̄  median  min  max  stdev
-            abs  floor  ceil  round  ln  log  exp  sin  cos  tan
-            sum{1 2 3}, sum(1,2,3), or sum 1 2 3 (takes everything after it)
+Functions:  sqrt √  sum ∑  product prod ∏  avg mean average x̄  median  min  max
+            stdev  abs  floor  ceil  round  ln  log  exp  sin  cos  tan
 
 Arithmetic applies element by element: {1 2 3}x2 is 2 4 6. Lists print one
 number per line. Adjacent terms multiply: 2π, 3√2, 2{1+1}. Group digits with _
-(1_000). An unmatched closing bracket wraps everything before it: 2+4+8}/2 is 7.
+(1_000). An unmatched closing bracket encapsulates prior numbers: 3+4+5}/2 → 6.
 
-Lines of stdin form one list: seq 10 | calc sum. Arguments that start with an
-operator continue it, and arguments that end with an operator or function take
-it as their last operand. @ places it explicitly: calc 'max{@}-min{@}'.
+Stdin can be complete expressions or lists of values. Lines of stdin are merged
+to form one list. Partial expressions are applied to stdin. Partials that start
+with an operator continue it and arguments that end with an operator or function
+take it as their last operand. @ explicitly references stdin: 'calc max@-min@' .
 
-Options (before the expression):
-  -p, --precision=N|max  decimal places for non-terminating results
-                         (default 5; max = full f64 precision)
-  -r, --rows             preserve rows: each line of stdin is its own list,
-                         and gives one line of output
-      --pretty[=always|auto|EXAMPLE]
-                         read and write numbers in the local style (3,141.6 or
-                         3.141,6); always is the default, auto only applies to
-                         a terminal, and an EXAMPLE such as 1.234,5 sets the style
-  -h, --help             show this help
-  -V, --version          show version
+Options:
+  -h, --help                     Show this help
+  -p, --precision=N|max          Decimal places for non-terminating results
+                                 (default 5; max = full f64 precision)
+  --pretty[=always|auto|SAMPLE]  Read and write numbers in the local style,
+                                 including digit grouping. always is the default,
+                                 auto only applies to terminal output, SAMPLE
+                                 explicitly sets the style, e.g. 1.234,5
+  -r, --rows                     Preserve rows: each line of stdin is treated as
+                                 its own list, and gives one line of output.
+  -V, --version                  Show version
 
-Environment:
-  CALC_PRETTY=auto|always|never   pretty output (never changes how input is read)
-  CALC_NUMBER_FORMAT=EXAMPLE      number style, instead of the system locale";
+See README at https://github.com/lcrilly/calc-cli";
 
 #[derive(Debug)]
 pub struct Error(String);

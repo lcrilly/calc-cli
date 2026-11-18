@@ -100,11 +100,11 @@ Arithmetic is exact (i128 rationals) until a result is irrational or overflows, 
 
 ## Command line options
 
-| Option syntax             | |
-|---------------------------|-|
-| `-p` `--precision=N\|max` | Set precision (decimal places) for output (default: `5`) |
-| `--pretty[=always\|auto\|EXAMPLE]` | Read and write numbers using the locale's style, including digit grouping. `EXAMPLE` explicitly sets the style, e.g. `10,00,000.1` |
-| `-r` `--rows`             | Preserve rows of input instead of merging into a single list |
+| Option syntax                     | |
+|-----------------------------------|-|
+| `-p` `--precision=N\|max`         | Set precision (decimal places) for output (default: `5`) |
+| `--pretty[=always\|auto\|SAMPLE]` | Read and write numbers using the locale's style, including digit grouping. `SAMPLE` explicitly sets the style, e.g. `10,00,000.1` |
+| `-r` `--rows`                     | Preserve rows of input instead of merging into a single list |
 
 Command line options must be specified first, before the expression, to avoid being mistaken for a negative number. `--` explicitly ends the options.
 
@@ -128,7 +128,7 @@ $ calc --pretty=1,23,456.7 12345678          # or give an example of the style
 - Under `--pretty`, numbers are read with the local decimal mark and grouping. A group separator only counts between correctly sized groups, so `1,2` is still the list 1, 2.
 - `CALC_PRETTY=auto` (or `always`/`never`) sets the default for output. It never changes how input is read.
   With `CALC_PRETTY=auto` in your shell profile, the terminal shows `3,141.6` while `calc 1000π | calc +1` still works.
-- The style comes from, in order: `--pretty=EXAMPLE`, `CALC_NUMBER_FORMAT=EXAMPLE`, `LC_ALL`/`LC_NUMERIC` if set, macOS System Settings → Language & Region (including custom number formats), then `LANG`.
+- The style comes from, in order: `--pretty=SAMPLE`, `CALC_NUMBER_FORMAT=SAMPLE`, `LC_ALL`/`LC_NUMERIC` if set, macOS System Settings → Language & Region (including custom number formats), then `LANG`.
 - In a locale that writes decimals with a comma, an input like `3,5` is an error rather than a list; write `3.5`, or `3, 5` for the list.
 
 ## Build & install
