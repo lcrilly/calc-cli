@@ -38,6 +38,8 @@ enum Tok {
     Div,
     Mod,
     Pow,
+    /// A superscript power: ² or ³.
+    Sup(i128),
     Sqrt,
     Pi,
     Open(char),
@@ -106,7 +108,7 @@ impl Expression {
     /// True when the expression starts with an operator, so it continues a value read from stdin.
     /// A leading '-' is left out: `calc -2` is a negative number, and must not wait on stdin.
     pub fn is_continuation(&self) -> bool {
-        self.tokens.first().is_some_and(|t| matches!(t.tok, Tok::Plus | Tok::Mul | Tok::Div | Tok::Mod | Tok::Pow))
+        self.tokens.first().is_some_and(|t| matches!(t.tok, Tok::Plus | Tok::Mul | Tok::Div | Tok::Mod | Tok::Pow | Tok::Sup(_)))
     }
 
     /// True when the expression ends with an operator or function, so stdin completes it.
@@ -232,6 +234,8 @@ fn tokenize(input: &str, syntax: &Syntax) -> Result<(Vec<Token>, bool), Error> {
                 '/' | '÷' => Tok::Div,
                 '%' => Tok::Mod,
                 '^' => Tok::Pow,
+                '²' => Tok::Sup(2),
+                '³' => Tok::Sup(3),
                 '√' => Tok::Sqrt,
                 'π' => Tok::Pi,
                 '@' => Tok::Stdin,
@@ -315,7 +319,7 @@ fn check_comma(chars: &[char], i: usize, space_before: bool, syntax: &Syntax) ->
 }
 
 fn ends_operand(tok: Tok) -> bool {
-    matches!(tok, Tok::Num(_) | Tok::Pi | Tok::Close(_) | Tok::Stdin)
+    matches!(tok, Tok::Num(_) | Tok::Pi | Tok::Close(_) | Tok::Stdin | Tok::Sup(_))
 }
 
 fn starts_operand(tok: Tok) -> bool {
@@ -534,7 +538,12 @@ impl Parser<'_> {
     }
 
     fn power(&mut self) -> Result<Vec<Value>, Error> {
-        let base = self.root()?;
+        let mut base = self.root()?;
+        // ² and ³ bind like ^2 and ^3: -2² is -4, √4² is (√4)², 2²³ is (2²)³.
+        while let Some(Tok::Sup(n)) = self.peek() {
+            self.i += 1;
+            base = zip(base, vec![Value::from_int(n)], Value::pow)?;
+        }
         if self.peek() == Some(Tok::Pow) {
             self.i += 1;
             return zip(base, self.unary()?, Value::pow);
@@ -727,6 +736,22 @@ mod tests {
         assert_eq!(eval("3..1"), "3 2 1");
         assert_eq!(eval("sum 1..100"), "5050");
         assert_eq!(eval("1..2x3"), "1 2 3 4 5 6");
+    }
+
+    #[test]
+    fn superscript_powers() {
+        same("3²", "9");
+        same("2³", "8");
+        same("-2²", "-2^2");
+        same("√4²", "√4^2");
+        same("{1+2}²", "9");
+        same("2²3", "12");
+        same("2²³", "64");
+        same("2²^3", "4^3");
+        assert_eq!(eval("{1 2 3}²"), "1 4 9");
+        assert_eq!(eval("2² 3"), "4 3");
+        assert_eq!(eval("π²"), "9.8696");
+        assert!(eval("²").starts_with("error"));
         assert_eq!(eval("1…5"), "1 2 3 4 5");
         assert_eq!(eval("1...5"), "1 2 3 4 5");
         assert_eq!(eval("sum 1 … 4"), "10");

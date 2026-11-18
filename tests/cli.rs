@@ -52,6 +52,7 @@ fn readme_examples_still_hold() {
     assert_eq!(ok(&["2^"], Some("1\n2\n3\n")), "2\n4\n8\n");
     assert_eq!(ok(&["+4}/2"], Some("1\n2\n3\n")), "2.5\n3\n3.5\n");
     assert_eq!(ok(&["^2"], Some("-2\n")), "4\n");
+    assert_eq!(ok(&["²"], Some("-2\n3\n")), "4\n9\n");
 }
 
 #[test]

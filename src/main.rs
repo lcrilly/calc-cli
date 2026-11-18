@@ -22,7 +22,7 @@ Usage:
 
 In most cases shell quoting and escaping can be avoided.
 
-Operators:  + -  x * × · •  ÷ /  % mod  ^
+Operators:  + -  x * × · •  ÷ /  % mod  ^  ² ³
 Brackets:   {} or () or []
 Roots:      √ or sqrt
 Constants:  π or pi

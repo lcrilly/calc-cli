@@ -25,13 +25,13 @@ date +%s | calc +60x60x24   # Apply partial expressions to values from stdin
 
 ## Constructing expressions
 
-| Operators           | Meaning                                  |
-|---------------------|------------------------------------------|
-| `+` , `-`           | add , subtract                           |
-| `*` `x` `×` `·` `•` | multiply                                 |
-| `÷` `/`             | divide                                   |
-| `%` `mod`           | modulo (remainder)                       |
-| `^`                 | power (right-associative)                |
+| Operators           | Meaning                                   |
+|---------------------|-------------------------------------------|
+| `+` , `-`           | add , subtract                            |
+| `*` `x` `×` `·` `•` | multiply                                  |
+| `÷` `/`             | divide                                    |
+| `%` `mod`           | modulo (remainder)                        |
+| `^` , `²` , `³`     | power (right-associative) , square , cube |
 
 | Symbols             | Meaning                                  |
 |---------------------|------------------------------------------|
@@ -79,7 +79,7 @@ date +%s | calc +60x60x24   # Apply partial expressions to values from stdin
 - With no expression arguments, stdin is evaluated and printed: each line can be any expression.
 - Multiple lines of stdin are merged to form one list (or see `--rows` for alternate).
 - Values received from stdin can be combined with arguments to chain compound expressions.
-  * Arguments that start with an operator (`+ x * ÷ / % ^ mod`) continue the stdin list: `seq 3 | calc x2`.
+  * Arguments that start with an operator (`+ x * ÷ / % ^ ² ³ mod`) continue the stdin list: `seq 3 | calc x2`.
   * Arguments that end with an operator or function apply stdin as their last operand: `seq 3 | calc 2^`, `seq 10 | calc avg`.
   * An unmatched closing bracket wraps the stdin value too: `seq 1 3 | calc +4}/2` gives `2.5`, `3`, `3.5`.
   * `@` places stdin explicitly, as often as needed: `seq 10 | calc 'max{@}-min{@}'`.
