@@ -82,7 +82,7 @@ date +%s | calc +60x60x24   # Apply partial expressions to values from stdin
   * Arguments that start with an operator (`+ x * ÷ / % ^ mod`) continue the stdin list: `seq 3 | calc x2`.
   * Arguments that end with an operator or function apply stdin as their last operand: `seq 3 | calc 2^`, `seq 10 | calc avg`.
   * An unmatched closing bracket wraps the stdin value too: `seq 1 3 | calc +4}/2` gives `2.5`, `3`, `3.5`.
-  * `@` places stdin explicitly, as often as needed: `seq 10 | calc 'sum{@}/count{@}'`.
+  * `@` places stdin explicitly, as often as needed: `seq 10 | calc 'max{@}-min{@}'`.
   * Complete arguments don't read stdin, so `calc 1+2` is safe inside a `while read` loop.
 - When an expression only works element by element (no functions that combine or reorder), each result is printed as its line arrives, so `tail -f` pipelines work.
   A bad line is reported on stderr with its line number and the rest carry on; the exit status is 1.

@@ -8,16 +8,11 @@ pub enum Func {
     // Aggregates: list → one number.
     Sum,
     Product,
-    Count,
     Mean,
     Median,
     Min,
     Max,
     Stdev,
-    // List → list.
-    CumSum,
-    CumProd,
-    Sort,
     // Element by element.
     Abs,
     Floor,
@@ -34,7 +29,6 @@ pub enum Func {
 #[derive(Clone, Copy, PartialEq)]
 pub enum Kind {
     Aggregate,
-    Reshape,
     Elementwise,
 }
 
@@ -42,17 +36,13 @@ pub enum Kind {
 pub const NAMES: &[(&str, Func)] = &[
     ("average", Func::Mean),
     ("product", Func::Product),
-    ("cumprod", Func::CumProd),
-    ("cumsum", Func::CumSum),
     ("median", Func::Median),
-    ("count", Func::Count),
     ("floor", Func::Floor),
     ("round", Func::Round),
     ("stdev", Func::Stdev),
     ("ceil", Func::Ceil),
     ("mean", Func::Mean),
     ("prod", Func::Product),
-    ("sort", Func::Sort),
     ("abs", Func::Abs),
     ("avg", Func::Mean),
     ("cos", Func::Cos),
@@ -79,8 +69,7 @@ impl Func {
     pub fn kind(self) -> Kind {
         use Func::*;
         match self {
-            Sum | Product | Count | Mean | Median | Min | Max | Stdev => Kind::Aggregate,
-            CumSum | CumProd | Sort => Kind::Reshape,
+            Sum | Product | Mean | Median | Min | Max | Stdev => Kind::Aggregate,
             Abs | Floor | Ceil | Round | Ln | Log | Exp | Sin | Cos | Tan => Kind::Elementwise,
         }
     }
@@ -91,7 +80,6 @@ impl Func {
         match self {
             Sum => one(sum(&args)?),
             Product => one(args.iter().try_fold(Value::from_int(1), |acc, &v| acc.mul(v))?),
-            Count => one(Value::from_int(args.len() as i128)),
             Mean => one(mean(&args)?),
             Median => {
                 let sorted = sorted(args);
@@ -116,9 +104,6 @@ impl Func {
                 let squares = args.iter().map(|&v| v.sub(m)?.pow(Value::from_int(2))).collect::<Result<Vec<_>, _>>()?;
                 one(sum(&squares)?.div(Value::from_int(args.len() as i128 - 1))?.sqrt()?)
             }
-            CumSum => scan(args, Value::add),
-            CumProd => scan(args, Value::mul),
-            Sort => Ok(sorted(args)),
             Abs => args.into_iter().map(Value::abs).collect(),
             Floor => args.into_iter().map(Value::floor).collect(),
             Ceil => args.into_iter().map(Value::ceil).collect(),
@@ -149,17 +134,6 @@ fn sorted(mut args: Vec<Value>) -> Vec<Value> {
     args
 }
 
-fn scan(args: Vec<Value>, op: fn(Value, Value) -> Result<Value, Error>) -> Result<Vec<Value>, Error> {
-    let mut out = Vec::with_capacity(args.len());
-    for v in args {
-        let next = match out.last() {
-            Some(&acc) => op(acc, v)?,
-            None => v,
-        };
-        out.push(next);
-    }
-    Ok(out)
-}
 
 fn float(args: Vec<Value>, f: fn(f64) -> f64) -> Result<Vec<Value>, Error> {
     args.into_iter().map(|v| crate::value::approx(f(v.to_f64()))).collect()

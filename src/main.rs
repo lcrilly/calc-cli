@@ -28,8 +28,7 @@ Roots:      √ or sqrt
 Constants:  π or pi
 Lists:      1 2 3  or  1,2,3   (1 -2 is a list; 1 - 2 is subtraction)
 Ranges:     1..10 or 1…10
-Functions:  sum ∑  product prod ∏  count  avg mean average x̄  median
-            min  max  stdev  cumsum  cumprod  sort
+Functions:  sum ∑  product prod ∏  avg mean average x̄  median  min  max  stdev
             abs  floor  ceil  round  ln  log  exp  sin  cos  tan
             sum{1 2 3}, sum(1,2,3), or sum 1 2 3 (takes everything after it)
 
@@ -39,7 +38,7 @@ number per line. Adjacent terms multiply: 2π, 3√2, 2{1+1}. Group digits with 
 
 Lines of stdin form one list: seq 10 | calc sum. Arguments that start with an
 operator continue it, and arguments that end with an operator or function take
-it as their last operand. @ places it explicitly: calc 'sum{@}/count{@}'.
+it as their last operand. @ places it explicitly: calc 'max{@}-min{@}'.
 
 Options (before the expression):
   -p, --precision=N|max  decimal places for non-terminating results
@@ -293,7 +292,7 @@ fn run_stdin(program: &parser::Program, syntax: &Syntax, printer: &Printer, rows
         return Ok(status);
     }
 
-    // The whole list is needed (sum, sort, …): read everything, and give no result
+    // The whole list is needed (sum, median, …): read everything, and give no result
     // if any line is bad, since a total that silently skips a line is worse than none.
     let mut values = Vec::new();
     let mut decimal = program.decimal_input;

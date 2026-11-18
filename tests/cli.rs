@@ -67,8 +67,7 @@ fn lists_on_the_command_line() {
 fn stdin_is_one_list() {
     assert_eq!(ok(&["sum"], Some("1\n2\n3\n4\n")), "10\n");
     assert_eq!(ok(&["sum"], Some("1 2\n3 4\n")), "10\n");
-    assert_eq!(ok(&["sum{@}/count{@}"], Some("1\n2\n3\n4\n")), "2.5\n");
-    assert_eq!(ok(&["cumsum"], Some("1\n2\n3\n")), "1\n3\n6\n");
+    assert_eq!(ok(&["max{@}-min{@}"], Some("3\n9\n4\n")), "6\n");
     assert_eq!(ok(&["sum"], Some("")), "0\n");
     assert_eq!(ok(&[], Some("1+1\n\n2π\n")), "2\n6.28319\n");
 }

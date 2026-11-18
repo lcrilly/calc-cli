@@ -707,12 +707,11 @@ mod tests {
         assert_eq!(eval("median 4 1 3 2"), "2.5");
         assert_eq!(eval("max 3 -7 2"), "3");
         assert_eq!(eval("min 3 -7 2"), "-7");
-        assert_eq!(eval("count 5 5 5"), "3");
         assert_eq!(eval("stdev 2 4 4 4 5 5 7 9"), "2.13809");
         assert_eq!(eval("2xmax{1 5}"), "10");
-        assert_eq!(eval("cumsum 1..5"), "1 3 6 10 15");
-        assert_eq!(eval("cumprod 1..5"), "1 2 6 24 120");
-        assert_eq!(eval("sort 3 1 2"), "1 2 3");
+        for removed in ["count 1 2", "sort 3 1 2", "cumsum 1 2", "cumprod 1 2"] {
+            assert!(eval(removed).starts_with("error"), "{removed}");
+        }
         assert_eq!(eval("abs -3 + 1"), "2");
         assert_eq!(eval("round{2.5 -2.5 2.4}"), "3.0 -3.0 2.0");
         assert_eq!(eval("floor 7/2"), "3");
