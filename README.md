@@ -15,14 +15,15 @@
 ## Example usage
 
 ```sh
-calc 0.1+0.2  →  0.3        # Accurate decimal arithmetic
-calc {3x4}^2  →  144        # Shell-safe characters to avoid quoting/escaping
-calc '√(99 - [36÷2])' → 9   # Nested brackets of different styles
-calc 15+4+3}/2  →  11       # Unmatched closing bracket wraps everything prior
-calc 2π12  →  75.39822      # Wieldy default precision for irrationals (see --precision)
-calc avg 3,4,8  →  5        # Send lists to functions
-seq 1 10 | calc sum  →  55  # Receive lists from stdin
-date +%s | calc +60x60x24   # Apply partial expressions to values from stdin
+calc 0.1+0.2  →  0.3          # Accurate decimal arithmetic
+calc {3x4}^2  →  144          # Shell-safe characters to avoid quoting/escaping
+calc √[∑1…2³ + ∏3…4]  →  14.5 # Supports scientific characters
+calc '(99 - {36÷3})%4'  →  3  # Nested brackets of different styles
+calc 15+4+3}/2  →  11         # Unmatched closing bracket wraps everything prior
+calc 2π12  →  75.39822        # Wieldy default precision for irrationals (see --precision)
+calc avg 3,4,8  →  5          # Send lists to functions
+seq 1 10 | calc sum  →  55    # Receive lists from stdin
+date +%s | calc +60x60x24  →  # Apply partial expressions to values from stdin
 ```
 
 ## Constructing expressions
@@ -55,15 +56,15 @@ date +%s | calc +60x60x24   # Apply partial expressions to values from stdin
 | `sin` `cos` `tan`             | per element; angles in radians       |
 
 ### Usage notes
-- Adjacent terms multiply at the same precedence as `x`: `2π`, `3√2`, `6÷2{1+2}` = 9.
-- `%`/`mod` shares precedence with `x` and `÷`, and the result takes the sign of the divisor (floored, as in Python): `-7 mod 3` = 2, `7%-3` = -2. Non-integers work too: `5.5 mod 2` = `1.5`.
+- Adjacent terms multiply at the same precedence as `x`: `2π`, `3√2`, `6÷2{1+2}` = 9 .
+- `%`/`mod` shares precedence with `x` and `÷`, and the result takes the sign of the divisor (floored, as in Python): `-7 mod 3` = 2, `7%-3` = -2. Non-integers work too: `5.5 mod 2` = `1.5` .
 - `√` binds to the term right after it: `√4^2` is `(√4)^2`; write `√{4^2}` for the other reading.
-- Superscripts are atomic and work left to right: `2²³` = `(2²)³` = `64`
+- Superscripts are atomic and work left to right: `2²³` = `(2²)³` = `64` .
 - Spaces are primarily for separating items in a list and can also be used to provide whitespace between operators. Take care with subtraction because `calc 1 -2` produces a list.
 - Commas also separate elements and trailing commas are inert: `sum(1,2,3,)`.
 - Operations are applied per element: `{1 2 3}x2` is 2 4 6, `2^{1 2 3}` is 2 4 8, `{1 2}+{10 20}` is 11 22. Lists between operators must be of the same length.
-- Digit grouping on input can use `_` `'` `’` and non-breaking space characters: : `calc √1_234_565.43`
-- Function names are case-insensitive, so spreadsheet habits work: `SUM(1,2,3)`.
+- Digit grouping on input can use `_` `'` `’` and non-breaking space characters: `calc √1_234_565.43` .
+- Function names are case-insensitive, so spreadsheet habits work: `SUM(1,2,3)` .
 
 ### Shell notes
 
@@ -75,7 +76,6 @@ date +%s | calc +60x60x24   # Apply partial expressions to values from stdin
   (`calc 2+4+8}/2`) or quote it. bash treats a lone `}` as literal.
 - Avoid commas or `..` inside `{}` because brace expansion turns
   `avg{1,2,3}` into `avg1 avg2 avg3` and `{1..3}` into `1 2 3` before `calc` runs.
-- Arguments and stdin must be UTF-8 so use the longform of `√`, `π` when needed.
 
 ### Stdin notes
 
