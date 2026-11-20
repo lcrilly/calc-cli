@@ -74,28 +74,21 @@ fn is_digit_grouping(c: char) -> bool {
     matches!(c, '_' | '\'' | '’' | '\u{a0}' | '\u{202f}' | '\u{2009}')
 }
 
-fn word_at(chars: &[char], i: usize) -> Option<(Tok, usize)> {
+/// A function name or word operator at the start of `chars`.
+fn word_at(chars: &[char]) -> Option<(Tok, usize)> {
     const WORDS: &[(&str, Tok)] = &[("sqrt", Tok::Sqrt), ("mod", Tok::Mod), ("pi", Tok::Pi)];
-    let matches = |word: &str| {
-        word.chars().enumerate().all(|(k, w)| chars.get(i + k).is_some_and(|c| c.to_ascii_lowercase() == w))
-    };
-    functions::NAMES
-        .iter()
-        .map(|&(name, f)| (name, Tok::Func(f)))
-        .chain(WORDS.iter().copied())
-        .filter(|(name, _)| matches(name))
-        .max_by_key(|(name, _)| name.len())
-        .map(|(name, tok)| (tok, name.len()))
+    let word: String = chars.iter().take_while(|c| c.is_alphabetic()).map(|c| c.to_ascii_lowercase()).collect();
+    let func = Func::prefix_of(&word).map(|(f, len)| (Tok::Func(f), len));
+    let other = WORDS.iter().find(|(w, _)| word.starts_with(w)).map(|&(w, tok)| (tok, w.len()));
+    func.into_iter().chain(other).max_by_key(|&(_, len)| len)
 }
 
-/// Returns the tokens, and whether any number was written with a decimal point.
-pub fn tokenize(input: &str, syntax: &Syntax) -> Result<(Vec<Token>, bool), Error> {
+pub fn tokenize(input: &str, syntax: &Syntax) -> Result<Vec<Token>, Error> {
     let chars: Vec<char> = input.chars().collect();
     let digit_at = |j: usize| chars.get(j).is_some_and(char::is_ascii_digit);
     let decimal_mark = syntax.pretty.map_or('.', |f| f.decimal);
 
     let mut tokens: Vec<Token> = Vec::new();
-    let mut decimal_input = false;
     let mut space_before = false;
     let mut i = 0;
     while i < chars.len() {
@@ -107,8 +100,7 @@ pub fn tokenize(input: &str, syntax: &Syntax) -> Result<(Vec<Token>, bool), Erro
         }
 
         let (tok, len) = if c.is_ascii_digit() || (c == '.' && decimal_mark == '.' && digit_at(i + 1)) {
-            let (value, len, decimal) = scan_number(&chars, i, syntax)?;
-            decimal_input |= decimal;
+            let (value, len) = scan_number(&chars, i, syntax)?;
             (Tok::Num(value), len)
         } else if c == '…' {
             (Tok::Range, 1)
@@ -121,7 +113,7 @@ pub fn tokenize(input: &str, syntax: &Syntax) -> Result<(Vec<Token>, bool), Erro
         } else if matches!(c, 'x' | 'X') && matches!(chars.get(i + 1), Some('\u{304}' | '\u{305}')) {
             // x̄ is x plus a combining macron (or overline); there's no single character for it.
             (Tok::Func(Func::Mean), 2)
-        } else if c.is_alphabetic() && let Some(word) = word_at(&chars, i) {
+        } else if c.is_alphabetic() && let Some(word) = word_at(&chars[i..]) {
             word
         } else if let Some(f) = functions::symbol(c) {
             (Tok::Func(f), 1)
@@ -152,12 +144,11 @@ pub fn tokenize(input: &str, syntax: &Syntax) -> Result<(Vec<Token>, bool), Erro
         i += len;
     }
     insert_separators(&mut tokens, &chars)?;
-    Ok((tokens, decimal_input))
+    Ok(tokens)
 }
 
-/// Scans a number literal starting at `start`: returns its value, length in characters,
-/// and whether it has a decimal part.
-fn scan_number(chars: &[char], start: usize, syntax: &Syntax) -> Result<(Value, usize, bool), Error> {
+/// Scans a number literal starting at `start`: returns its value and length in characters.
+fn scan_number(chars: &[char], start: usize, syntax: &Syntax) -> Result<(Value, usize), Error> {
     let decimal_mark = syntax.pretty.map_or('.', |f| f.decimal);
     let digits_from = |j: usize| chars[j..].iter().take_while(|c| c.is_ascii_digit()).count();
 
@@ -191,7 +182,7 @@ fn scan_number(chars: &[char], start: usize, syntax: &Syntax) -> Result<(Value, 
         let literal: String = chars[start..j].iter().collect();
         Error::new(format!("invalid number '{literal}'")).at(start..j)
     })?;
-    Ok((value, j - start, seen_decimal))
+    Ok((value, j - start))
 }
 
 /// Rejects a comma that probably isn't a list separator: `1,234` (grouping) and,

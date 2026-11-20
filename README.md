@@ -98,7 +98,6 @@ Arithmetic is exact (i128 rationals) until a result is irrational or overflows, 
 - Integers stay integers: `7/7` → `1`.
 - Terminating decimals print in full: `1/64` → `0.015625`.
 - Recurring and irrational results print up to 5 places (trailing zeros trimmed).
-- A decimal anywhere in the input keeps a decimal in the output: `2.5x2` → `5.0`.
 - f64 results of 1e16 or more print in scientific notation, since their low digits aren't real.
 
 ## Command line options

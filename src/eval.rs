@@ -91,7 +91,7 @@ impl Node {
         match &self.expr {
             Expr::Num(v) => Ok(vec![*v]),
             Expr::Stdin => stdin.map(<[Value]>::to_vec).ok_or_else(|| Error::new("'@' needs input on stdin")),
-            Expr::Neg(a) => a.eval(stdin)?.into_iter().map(Value::neg).collect(),
+            Expr::Neg(a) => Ok(a.eval(stdin)?.into_iter().map(Value::neg).collect()),
             Expr::Sqrt(a) => a.eval(stdin)?.into_iter().map(Value::sqrt).collect(),
             Expr::Binary(op, a, b) => zip(a.eval(stdin)?, b.eval(stdin)?, op.function()),
             Expr::Call(f, args) => f.apply(args.eval(stdin)?),
@@ -125,11 +125,11 @@ fn range(from: Vec<Value>, to: Vec<Value>) -> Result<Vec<Value>, Error> {
         return Err(Error::new("a range needs a single number at each end"));
     };
     let (from, to) = (*from, *to);
-    let ascending = from.cmp(to).is_le();
+    let ascending = from.total_cmp(to).is_le();
     let step = Value::from_int(if ascending { 1 } else { -1 });
     let mut out = Vec::new();
     let mut v = from;
-    while if ascending { v.cmp(to).is_le() } else { v.cmp(to).is_ge() } {
+    while if ascending { v.total_cmp(to).is_le() } else { v.total_cmp(to).is_ge() } {
         if out.len() == MAX_RANGE {
             return Err(Error::new(format!("range is longer than {MAX_RANGE} numbers")));
         }

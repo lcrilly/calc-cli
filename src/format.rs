@@ -1,3 +1,7 @@
+//! Turns values into decimals for printing.
+
+use std::fmt;
+
 use crate::value::{Ratio, Value};
 
 /// Decimal places shown for recurring and irrational results when no precision is given.
@@ -12,17 +16,70 @@ pub enum Precision {
     Max,
 }
 
-pub fn format(value: Value, decimal_input: bool, precision: Precision) -> String {
-    let s = match value {
-        Value::Exact(r) => format_exact(r, precision),
-        Value::Approx(f) => format_float(f, precision),
-    };
-    tidy(s, decimal_input)
+/// A number ready to print: its sign, the digits either side of the decimal mark, and
+/// an exponent. Printing it plainly (`Display`) or in a local style (`NumberFormat::apply`)
+/// is then only a matter of punctuation.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Decimal {
+    pub negative: bool,
+    pub int: String,
+    /// Fractional digits, without trailing zeros.
+    pub frac: String,
+    pub exp: Option<i32>,
 }
 
-fn format_exact(r: Ratio, precision: Precision) -> String {
+impl Decimal {
+    /// Reads Rust's own formatting of an f64 (`-1234.5`, `1.5e20`).
+    pub fn from_std(s: &str) -> Decimal {
+        let (negative, s) = match s.strip_prefix('-') {
+            Some(rest) => (true, rest),
+            None => (false, s),
+        };
+        let (mantissa, exp) = match s.split_once('e') {
+            Some((m, e)) => (m, e.parse().ok()),
+            None => (s, None),
+        };
+        let (int, frac) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+        Decimal { negative, int: int.into(), frac: frac.into(), exp }.tidy()
+    }
+
+    /// Trims trailing fractional zeros and drops the sign from zero.
+    fn tidy(mut self) -> Decimal {
+        let len = self.frac.trim_end_matches('0').len();
+        self.frac.truncate(len);
+        if self.frac.is_empty() && self.int.bytes().all(|b| b == b'0') {
+            self.negative = false;
+        }
+        self
+    }
+}
+
+impl fmt::Display for Decimal {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.negative {
+            f.write_str("-")?;
+        }
+        f.write_str(&self.int)?;
+        if !self.frac.is_empty() {
+            write!(f, ".{}", self.frac)?;
+        }
+        if let Some(e) = self.exp {
+            write!(f, "e{e}")?;
+        }
+        Ok(())
+    }
+}
+
+pub fn format(value: Value, precision: Precision) -> Decimal {
+    match value {
+        Value::Exact(r) => format_exact(r, precision),
+        Value::Approx(f) => format_float(f, precision),
+    }
+}
+
+fn format_exact(r: Ratio, precision: Precision) -> Decimal {
     if r.den == 1 {
-        return r.num.to_string();
+        return Decimal { negative: r.num < 0, int: r.num.unsigned_abs().to_string(), frac: String::new(), exp: None };
     }
     let places = match (precision, terminating_places(r.den)) {
         (Precision::Places(n), _) => Some(n),
@@ -38,19 +95,21 @@ fn format_exact(r: Ratio, precision: Precision) -> String {
 /// Beyond this an f64's integer digits are mostly noise, so switch to scientific notation.
 const SCIENTIFIC_THRESHOLD: f64 = 1e16;
 
-fn format_float(f: f64, precision: Precision) -> String {
-    if f.abs() >= SCIENTIFIC_THRESHOLD {
-        return match precision {
+fn format_float(f: f64, precision: Precision) -> Decimal {
+    let s = if f.abs() >= SCIENTIFIC_THRESHOLD {
+        match precision {
             Precision::Default => format!("{f:.DEFAULT_PLACES$e}"),
             Precision::Places(n) => format!("{f:.n$e}"),
             Precision::Max => format!("{f:e}"),
-        };
-    }
-    match precision {
-        Precision::Default => format!("{f:.DEFAULT_PLACES$}"),
-        Precision::Places(n) => format!("{f:.n$}"),
-        Precision::Max => format!("{f}"),
-    }
+        }
+    } else {
+        match precision {
+            Precision::Default => format!("{f:.DEFAULT_PLACES$}"),
+            Precision::Places(n) => format!("{f:.n$}"),
+            Precision::Max => format!("{f}"),
+        }
+    };
+    Decimal::from_std(&s)
 }
 
 /// Number of decimal places needed if `1/den` terminates (den = 2^a·5^b), else `None`.
@@ -69,7 +128,7 @@ fn terminating_places(mut den: i128) -> Option<usize> {
 
 /// Exact long division to `places` digits, rounding half away from zero.
 /// `None` if an intermediate would overflow, so the caller can fall back to f64.
-fn round_exact(r: Ratio, places: usize) -> Option<String> {
+fn round_exact(r: Ratio, places: usize) -> Option<Decimal> {
     let den = r.den as u128;
     let n = r.num.unsigned_abs();
     let mut int = n / den;
@@ -98,33 +157,6 @@ fn round_exact(r: Ratio, places: usize) -> Option<String> {
         }
     }
 
-    let mut s = String::with_capacity(places + 42);
-    if r.num < 0 {
-        s.push('-');
-    }
-    s.push_str(&int.to_string());
-    if !digits.is_empty() {
-        s.push('.');
-        s.extend(digits.iter().map(|&d| char::from(b'0' + d)));
-    }
-    Some(s)
-}
-
-/// Trims trailing fractional zeros, drops "-0", and keeps a ".0" when the
-/// input itself was written with decimals.
-fn tidy(mut s: String, decimal_input: bool) -> String {
-    if let Some((mantissa, exponent)) = s.split_once('e') {
-        return format!("{}e{exponent}", tidy(mantissa.into(), false));
-    }
-    if s.contains('.') {
-        let trimmed = s.trim_end_matches('0').trim_end_matches('.').len();
-        s.truncate(trimmed);
-    }
-    if s.trim_start_matches('-') == "0" {
-        s = "0".into();
-    }
-    if decimal_input && !s.contains('.') {
-        s.push_str(".0");
-    }
-    s
+    let frac = digits.iter().map(|&d| char::from(b'0' + d)).collect();
+    Some(Decimal { negative: r.num < 0, int: int.to_string(), frac, exp: None }.tidy())
 }

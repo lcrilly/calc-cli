@@ -32,8 +32,8 @@ pub enum Kind {
     Elementwise,
 }
 
-/// Names are matched case-insensitively, longest first, so `max` isn't read as `ma` × ….
-pub const NAMES: &[(&str, Func)] = &[
+/// Names are matched case-insensitively and the longest wins, so `product` isn't `prod` × ….
+const NAMES: &[(&str, Func)] = &[
     ("average", Func::Mean),
     ("product", Func::Product),
     ("median", Func::Median),
@@ -66,6 +66,15 @@ pub fn symbol(c: char) -> Option<Func> {
 }
 
 impl Func {
+    /// The function whose name starts `word` (in lowercase), and the length of that name.
+    pub fn prefix_of(word: &str) -> Option<(Func, usize)> {
+        NAMES
+            .iter()
+            .filter(|(name, _)| word.starts_with(name))
+            .max_by_key(|(name, _)| name.len())
+            .map(|&(name, f)| (f, name.len()))
+    }
+
     pub fn kind(self) -> Kind {
         use Func::*;
         match self {
@@ -93,8 +102,8 @@ impl Func {
                     one(sorted[n / 2 - 1].add(sorted[n / 2])?.div(Value::from_int(2))?)
                 }
             }
-            Min => one(*sorted(args).first().ok_or_else(|| Error::new("min of an empty list"))?),
-            Max => one(*sorted(args).last().ok_or_else(|| Error::new("max of an empty list"))?),
+            Min => one(args.into_iter().min_by(|a, b| a.total_cmp(*b)).ok_or_else(|| Error::new("min of an empty list"))?),
+            Max => one(args.into_iter().max_by(|a, b| a.total_cmp(*b)).ok_or_else(|| Error::new("max of an empty list"))?),
             Stdev => {
                 // Sample standard deviation (n − 1), as spreadsheets' STDEV.
                 if args.len() < 2 {
@@ -104,10 +113,10 @@ impl Func {
                 let squares = args.iter().map(|&v| v.sub(m)?.pow(Value::from_int(2))).collect::<Result<Vec<_>, _>>()?;
                 one(sum(&squares)?.div(Value::from_int(args.len() as i128 - 1))?.sqrt()?)
             }
-            Abs => args.into_iter().map(Value::abs).collect(),
-            Floor => args.into_iter().map(Value::floor).collect(),
-            Ceil => args.into_iter().map(Value::ceil).collect(),
-            Round => args.into_iter().map(Value::round).collect(),
+            Abs => Ok(args.into_iter().map(Value::abs).collect()),
+            Floor => Ok(args.into_iter().map(Value::floor).collect()),
+            Ceil => Ok(args.into_iter().map(Value::ceil).collect()),
+            Round => Ok(args.into_iter().map(Value::round).collect()),
             Ln => float(args, f64::ln),
             Log => float(args, f64::log10),
             Exp => float(args, f64::exp),
@@ -130,10 +139,9 @@ fn mean(args: &[Value]) -> Result<Value, Error> {
 }
 
 fn sorted(mut args: Vec<Value>) -> Vec<Value> {
-    args.sort_by(|a, b| a.cmp(*b));
+    args.sort_by(|a, b| a.total_cmp(*b));
     args
 }
-
 
 fn float(args: Vec<Value>, f: fn(f64) -> f64) -> Result<Vec<Value>, Error> {
     args.into_iter().map(|v| crate::value::approx(f(v.to_f64()))).collect()

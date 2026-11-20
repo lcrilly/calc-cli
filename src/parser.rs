@@ -24,25 +24,16 @@ use crate::value::Value;
 pub struct Expression {
     source: String,
     tokens: Vec<Token>,
-    decimal_input: bool,
 }
 
 /// A parsed expression, ready to evaluate.
 pub struct Program {
     source: String,
     root: Node,
-    /// True when any literal was written with a decimal point.
-    pub decimal_input: bool,
-}
-
-pub struct Evaluation {
-    pub values: Vec<Value>,
-    /// True when any literal was written with a decimal point.
-    pub decimal_input: bool,
 }
 
 /// Evaluates an expression that doesn't read stdin (a line of input).
-pub fn evaluate(input: &str, syntax: &Syntax) -> Result<Evaluation, Error> {
+pub fn evaluate(input: &str, syntax: &Syntax) -> Result<Vec<Value>, Error> {
     let expression = Expression::parse(input, syntax)?;
     if expression.is_empty() {
         return Err(Error::new("empty expression"));
@@ -50,14 +41,12 @@ pub fn evaluate(input: &str, syntax: &Syntax) -> Result<Evaluation, Error> {
     if let Some(t) = expression.tokens.iter().find(|t| t.tok == Tok::Stdin) {
         return Err(Error::new("'@' can only be used in arguments").at(t.span.clone()));
     }
-    let program = expression.compile()?;
-    Ok(Evaluation { values: program.evaluate(None)?, decimal_input: program.decimal_input })
+    expression.compile()?.evaluate(None)
 }
 
 impl Expression {
     pub fn parse(input: &str, syntax: &Syntax) -> Result<Expression, Error> {
-        let (tokens, decimal_input) = lexer::tokenize(input, syntax)?;
-        Ok(Expression { source: input.to_string(), tokens, decimal_input })
+        Ok(Expression { source: input.to_string(), tokens: lexer::tokenize(input, syntax)? })
     }
 
     pub fn is_empty(&self) -> bool {
@@ -109,7 +98,7 @@ impl Expression {
                 _ => parser.unexpected(t),
             });
         }
-        Ok(Program { source: self.source, root, decimal_input: self.decimal_input })
+        Ok(Program { source: self.source, root })
     }
 }
 
@@ -366,9 +355,7 @@ mod tests {
 
     fn eval_with(input: &str, syntax: &Syntax) -> String {
         match evaluate(input, syntax) {
-            Ok(e) => {
-                e.values.iter().map(|&v| format(v, e.decimal_input, Precision::Default)).collect::<Vec<_>>().join(" ")
-            }
+            Ok(values) => values.iter().map(|&v| format(v, Precision::Default).to_string()).collect::<Vec<_>>().join(" "),
             Err(e) => format!("error: {e}"),
         }
     }
@@ -479,7 +466,7 @@ mod tests {
             assert!(eval(removed).starts_with("error"), "{removed}");
         }
         assert_eq!(eval("abs -3 + 1"), "2");
-        assert_eq!(eval("round{2.5 -2.5 2.4}"), "3.0 -3.0 2.0");
+        assert_eq!(eval("round{2.5 -2.5 2.4}"), "3 -3 2");
         assert_eq!(eval("floor 7/2"), "3");
         assert_eq!(eval("ceil 7/2"), "4");
         assert_eq!(eval("log 1000"), "3");
@@ -512,6 +499,13 @@ mod tests {
         assert_eq!(eval("1…5"), "1 2 3 4 5");
         assert_eq!(eval("1...5"), "1 2 3 4 5");
         assert_eq!(eval("sum 1 … 4"), "10");
+    }
+
+    #[test]
+    fn decimals_print_as_themselves() {
+        assert_eq!(eval("2.5x2"), "5");
+        assert_eq!(eval("0.5 3"), "0.5 3");
+        assert_eq!(eval("1.50"), "1.5");
     }
 
     #[test]

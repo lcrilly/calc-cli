@@ -133,7 +133,7 @@ impl Value {
     }
 
     pub fn sub(self, rhs: Value) -> Result<Value, Error> {
-        self.add(rhs.neg()?)
+        self.add(rhs.neg())
     }
 
     pub fn mul(self, rhs: Value) -> Result<Value, Error> {
@@ -189,8 +189,8 @@ impl Value {
         Value::Exact(Ratio { num: n, den: 1 })
     }
 
-    /// Total order for sorting; exact values compare exactly where the products fit.
-    pub fn cmp(self, rhs: Value) -> Ordering {
+    /// Total order, as `f64::total_cmp`; exact values compare exactly where the products fit.
+    pub fn total_cmp(self, rhs: Value) -> Ordering {
         if let (Value::Exact(a), Value::Exact(b)) = (self, rhs)
             && let (Some(l), Some(r)) = (a.num.checked_mul(b.den), b.num.checked_mul(a.den))
         {
@@ -199,23 +199,23 @@ impl Value {
         self.to_f64().total_cmp(&rhs.to_f64())
     }
 
-    pub fn abs(self) -> Result<Value, Error> {
-        if self.is_negative() { self.neg() } else { Ok(self) }
+    pub fn abs(self) -> Value {
+        if self.is_negative() { self.neg() } else { self }
     }
 
-    pub fn floor(self) -> Result<Value, Error> {
+    pub fn floor(self) -> Value {
         match self {
-            Value::Exact(r) => Ok(Value::from_int(r.num.div_euclid(r.den))),
-            Value::Approx(f) => approx(f.floor()),
+            Value::Exact(r) => Value::from_int(r.num.div_euclid(r.den)),
+            Value::Approx(f) => Value::Approx(f.floor()),
         }
     }
 
-    pub fn ceil(self) -> Result<Value, Error> {
-        self.neg()?.floor()?.neg()
+    pub fn ceil(self) -> Value {
+        self.neg().floor().neg()
     }
 
     /// Rounds half away from zero, as spreadsheets do.
-    pub fn round(self) -> Result<Value, Error> {
+    pub fn round(self) -> Value {
         match self {
             Value::Exact(r) => {
                 let rounded = || {
@@ -223,19 +223,16 @@ impl Value {
                     let q = i128::try_from(n / (r.den as u128 * 2)).ok()?;
                     Some(if r.num < 0 { -q } else { q })
                 };
-                match rounded() {
-                    Some(q) => Ok(Value::from_int(q)),
-                    None => approx(r.to_f64().round()),
-                }
+                rounded().map_or(Value::Approx(r.to_f64().round()), Value::from_int)
             }
-            Value::Approx(f) => approx(f.round()),
+            Value::Approx(f) => Value::Approx(f.round()),
         }
     }
 
-    pub fn neg(self) -> Result<Value, Error> {
+    pub fn neg(self) -> Value {
         match self {
-            Value::Exact(r) => Ok(r.checked_neg().map_or(Value::Approx(-r.to_f64()), Value::Exact)),
-            Value::Approx(f) => Ok(Value::Approx(-f)),
+            Value::Exact(r) => r.checked_neg().map_or(Value::Approx(-r.to_f64()), Value::Exact),
+            Value::Approx(f) => Value::Approx(-f),
         }
     }
 

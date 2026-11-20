@@ -7,6 +7,7 @@
 use std::sync::OnceLock;
 
 use crate::error::Error;
+use crate::format::Decimal;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct NumberFormat {
@@ -59,34 +60,23 @@ impl NumberFormat {
         Ok(NumberFormat { decimal, group, primary, secondary })
     }
 
-    /// Rewrites a plain number (`-1234.5`, `1.5e20`) in this format.
-    pub fn apply(&self, plain: &str) -> String {
-        let (sign, rest) = match plain.strip_prefix('-') {
-            Some(rest) => ("-", rest),
-            None => ("", plain),
-        };
-        let (mantissa, exponent) = match rest.split_once('e') {
-            Some((m, e)) => (m, Some(e)),
-            None => (rest, None),
-        };
-        let (int, frac) = match mantissa.split_once('.') {
-            Some((i, f)) => (i, Some(f)),
-            None => (mantissa, None),
-        };
-
-        let mut out = String::from(sign);
-        match (self.group, exponent) {
+    /// Writes a decimal in this format.
+    pub fn apply(&self, d: &Decimal) -> String {
+        let mut out = String::new();
+        if d.negative {
+            out.push('-');
+        }
+        match (self.group, d.exp) {
             // Grouping a mantissa (1.5e20) would mean nothing.
-            (Some(g), None) => out.push_str(&self.group_digits(int, g)),
-            _ => out.push_str(int),
+            (Some(g), None) => out.push_str(&self.group_digits(&d.int, g)),
+            _ => out.push_str(&d.int),
         }
-        if let Some(frac) = frac {
+        if !d.frac.is_empty() {
             out.push(self.decimal);
-            out.push_str(frac);
+            out.push_str(&d.frac);
         }
-        if let Some(e) = exponent {
-            out.push('e');
-            out.push_str(e);
+        if let Some(e) = d.exp {
+            out.push_str(&format!("e{e}"));
         }
         out
     }
@@ -274,11 +264,11 @@ mod tests {
 
     #[test]
     fn apply() {
-        assert_eq!(fmt("1,234.5").apply("3141.6"), "3,141.6");
-        assert_eq!(fmt("1.234,5").apply("3141.6"), "3.141,6");
-        assert_eq!(fmt("1\u{202f}234,5").apply("-1234567"), "-1\u{202f}234\u{202f}567");
-        assert_eq!(fmt("12,34,567.8").apply("1234567.25"), "12,34,567.25");
-        assert_eq!(fmt("1,234.5").apply("999"), "999");
-        assert_eq!(fmt("1.234,5").apply("1.5e20"), "1,5e20");
+        assert_eq!(fmt("1,234.5").apply(&Decimal::from_std("3141.6")), "3,141.6");
+        assert_eq!(fmt("1.234,5").apply(&Decimal::from_std("3141.6")), "3.141,6");
+        assert_eq!(fmt("1\u{202f}234,5").apply(&Decimal::from_std("-1234567")), "-1\u{202f}234\u{202f}567");
+        assert_eq!(fmt("12,34,567.8").apply(&Decimal::from_std("1234567.25")), "12,34,567.25");
+        assert_eq!(fmt("1,234.5").apply(&Decimal::from_std("999")), "999");
+        assert_eq!(fmt("1.234,5").apply(&Decimal::from_std("1.5e20")), "1,5e20");
     }
 }
