@@ -74,6 +74,22 @@ fn stdin_is_one_list() {
 }
 
 #[test]
+fn syntax_errors_come_before_stdin() {
+    // Reported once, against the arguments, not once per line of input.
+    let out = calc(&["x{2"], Some("1\n2\n3\n"));
+    assert_eq!((out.stdout.as_str(), out.code), ("", 1));
+    assert_eq!(out.stderr, "calc: missing '}'\n  x{2\n   ^\n");
+}
+
+#[test]
+fn errors_show_where() {
+    assert_eq!(calc(&["2x{3+4"], None).stderr, "calc: missing '}'\n  2x{3+4\n    ^\n");
+    let out = calc(&["12/"], Some("1\n0\n"));
+    assert_eq!(out.stdout, "12\n");
+    assert_eq!(out.stderr, "calc: line 2: division by zero\n  12/\n  ^^^\n");
+}
+
+#[test]
 fn rows_are_preserved() {
     assert_eq!(ok(&["-r", "sum"], Some("1 2\n3 4\n")), "3\n7\n");
     assert_eq!(ok(&["--rows", "x10"], Some("1 2\n3 4\n")), "10 20\n30 40\n");

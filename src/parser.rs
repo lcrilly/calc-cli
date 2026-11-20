@@ -1,5 +1,5 @@
-//! Tokeniser and recursive-descent evaluator. Every value is a list; a single
-//! number is a list of one, and arithmetic applies element by element.
+//! Parses tokens into a syntax tree, which is checked once and can then be
+//! evaluated any number of times.
 //!
 //! Grammar (lowest to highest precedence):
 //!   list    := element (SEP element)* SEP?                -- SEP is ',' or a separating space
@@ -7,67 +7,31 @@
 //!   expr    := term (('+' | '-') term)*
 //!   term    := unary (('×' | '÷' | '%') unary | unary)*   -- adjacency is implicit ×
 //!   unary   := ('+' | '-') unary | power
-//!   power   := root ('^' unary)?                         -- right-associative
+//!   power   := root SUP* ('^' unary)?                     -- right-associative
 //!   root    := '√' ('+' | '-')* root | primary
 //!   primary := number | 'π' | '@' | '(' list ')' | call
 //!   call    := FUNC '(' list ')' | FUNC list              -- without a bracket, takes the rest
 //!
-//! A space separates list elements only between two complete operands (`1 2`, `2 π`),
-//! or before a sign attached to an operand (`1 -2`); elsewhere it is ignored (`1 + 2`).
 //! A closing bracket with no opening bracket implies one at the very start of the
 //! expression: `2+4+8}/2` is `{2+4+8}/2`.
 
-use crate::Error;
-use crate::functions::{self, Func, Kind};
-use crate::locale::{self, NumberFormat};
-use crate::value::{Ratio, Value};
+use crate::error::Error;
+use crate::eval::{Expr, Node, Op};
+use crate::lexer::{self, Syntax, Tok, Token};
+use crate::value::Value;
 
-/// How numbers in the input are written.
-#[derive(Clone, Copy, Default)]
-pub struct Syntax {
-    /// Set by `--pretty`: read numbers with this decimal mark and grouping.
-    pub pretty: Option<NumberFormat>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Tok {
-    Num(Value),
-    Plus,
-    Minus,
-    Mul,
-    Div,
-    Mod,
-    Pow,
-    /// A superscript power: ² or ³.
-    Sup(i128),
-    Sqrt,
-    Pi,
-    Open(char),
-    Close(char),
-    Sep,
-    Range,
-    Stdin,
-    Func(Func),
-}
-
-#[derive(Clone)]
-struct Token {
-    tok: Tok,
-    text: String,
-    /// 1-based character position in the original input, for error messages.
-    pos: usize,
-    space_before: bool,
-}
-
-/// A tokenised expression, before separators and implied brackets are worked out.
+/// A tokenised expression, which may still be missing stdin.
 pub struct Expression {
+    source: String,
     tokens: Vec<Token>,
     decimal_input: bool,
 }
 
-/// An expression ready to evaluate, any number of times.
+/// A parsed expression, ready to evaluate.
 pub struct Program {
-    tokens: Vec<Token>,
+    source: String,
+    root: Node,
+    /// True when any literal was written with a decimal point.
     pub decimal_input: bool,
 }
 
@@ -77,14 +41,14 @@ pub struct Evaluation {
     pub decimal_input: bool,
 }
 
-/// Evaluates an expression that doesn't read stdin (an argument list or one line of input).
+/// Evaluates an expression that doesn't read stdin (a line of input).
 pub fn evaluate(input: &str, syntax: &Syntax) -> Result<Evaluation, Error> {
     let expression = Expression::parse(input, syntax)?;
-    if expression.tokens.is_empty() {
+    if expression.is_empty() {
         return Err(Error::new("empty expression"));
     }
-    if expression.reads_stdin() {
-        return Err(Error::new("'@' can only be used in arguments"));
+    if let Some(t) = expression.tokens.iter().find(|t| t.tok == Tok::Stdin) {
+        return Err(Error::new("'@' can only be used in arguments").at(t.span.clone()));
     }
     let program = expression.compile()?;
     Ok(Evaluation { values: program.evaluate(None)?, decimal_input: program.decimal_input })
@@ -92,8 +56,8 @@ pub fn evaluate(input: &str, syntax: &Syntax) -> Result<Evaluation, Error> {
 
 impl Expression {
     pub fn parse(input: &str, syntax: &Syntax) -> Result<Expression, Error> {
-        let (tokens, decimal_input) = tokenize(input, syntax)?;
-        Ok(Expression { tokens, decimal_input })
+        let (tokens, decimal_input) = lexer::tokenize(input, syntax)?;
+        Ok(Expression { source: input.to_string(), tokens, decimal_input })
     }
 
     pub fn is_empty(&self) -> bool {
@@ -126,238 +90,44 @@ impl Expression {
         if self.reads_stdin() {
             return;
         }
-        let stdin = || Token { tok: Tok::Stdin, text: "@".into(), pos: 0, space_before: false };
-        if self.tokens.is_empty() {
-            self.tokens.push(stdin());
-            return;
-        }
-        if self.awaits_operand() {
-            self.tokens.push(stdin());
+        let end = self.source.chars().count();
+        if self.tokens.is_empty() || self.awaits_operand() {
+            self.tokens.push(Token::synthetic(Tok::Stdin, end));
         }
         if self.is_continuation() {
-            self.tokens.insert(0, stdin());
+            self.tokens.insert(0, Token::synthetic(Tok::Stdin, 0));
         }
     }
 
     pub fn compile(mut self) -> Result<Program, Error> {
-        insert_separators(&mut self.tokens)?;
         infer_opening_brackets(&mut self.tokens);
-        Ok(Program { tokens: self.tokens, decimal_input: self.decimal_input })
+        let mut parser = Parser { tokens: &self.tokens, i: 0, source: &self.source };
+        let root = parser.list()?;
+        if let Some(t) = parser.token() {
+            return Err(match t.tok {
+                Tok::Close(c) => Error::new(format!("unmatched '{c}'")).at(t.span.clone()),
+                _ => parser.unexpected(t),
+            });
+        }
+        Ok(Program { source: self.source, root, decimal_input: self.decimal_input })
     }
 }
 
 impl Program {
+    /// The expression as written, for showing where an error is.
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
     /// True when stdin can be processed a line at a time with the same result as
-    /// reading it all as one list: nothing combines or reorders elements.
+    /// reading it all as one list.
     pub fn streams(&self) -> bool {
-        self.tokens.iter().all(|t| match t.tok {
-            Tok::Sep | Tok::Range => false,
-            Tok::Func(f) => f.kind() == Kind::Elementwise,
-            _ => true,
-        })
+        self.root.is_elementwise()
     }
 
     pub fn evaluate(&self, stdin: Option<&[Value]>) -> Result<Vec<Value>, Error> {
-        let mut parser = Parser { tokens: &self.tokens, i: 0, stdin };
-        let values = parser.list()?;
-        if let Some(t) = parser.tokens.get(parser.i) {
-            return Err(match t.tok {
-                Tok::Close(c) => Error::new(format!("unmatched '{c}' at position {}", t.pos)),
-                _ => Error::new(format!("unexpected '{}' at position {}", t.text, t.pos)),
-            });
-        }
-        Ok(values)
+        self.root.eval(stdin)
     }
-}
-
-/// Characters that group digits in any mode: `1_000`, `1'000`, `1’000`, and no-break spaces.
-fn is_digit_grouping(c: char) -> bool {
-    matches!(c, '_' | '\'' | '’' | '\u{a0}' | '\u{202f}' | '\u{2009}')
-}
-
-fn word_at(chars: &[char], i: usize) -> Option<(Tok, usize)> {
-    const WORDS: &[(&str, Tok)] = &[("sqrt", Tok::Sqrt), ("mod", Tok::Mod), ("pi", Tok::Pi)];
-    let matches = |word: &str| {
-        word.chars().enumerate().all(|(k, w)| chars.get(i + k).is_some_and(|c| c.to_ascii_lowercase() == w))
-    };
-    functions::NAMES
-        .iter()
-        .map(|&(name, f)| (name, Tok::Func(f)))
-        .chain(WORDS.iter().copied())
-        .filter(|(name, _)| matches(name))
-        .max_by_key(|(name, _)| name.len())
-        .map(|(name, tok)| (tok, name.len()))
-}
-
-fn tokenize(input: &str, syntax: &Syntax) -> Result<(Vec<Token>, bool), Error> {
-    let chars: Vec<char> = input.chars().collect();
-    let digit_at = |j: usize| chars.get(j).is_some_and(char::is_ascii_digit);
-    let decimal_mark = syntax.pretty.map_or('.', |f| f.decimal);
-
-    let mut tokens: Vec<Token> = Vec::new();
-    let mut decimal_input = false;
-    let mut space_before = false;
-    let mut i = 0;
-    while i < chars.len() {
-        let (pos, c) = (i + 1, chars[i]);
-        if c.is_whitespace() {
-            space_before = true;
-            i += 1;
-            continue;
-        }
-
-        let (tok, len) = if c.is_ascii_digit() || (c == '.' && decimal_mark == '.' && digit_at(i + 1)) {
-            let (value, len, decimal) = scan_number(&chars, i, syntax)?;
-            decimal_input |= decimal;
-            (Tok::Num(value), len)
-        } else if c == '…' {
-            (Tok::Range, 1)
-        } else if c == '.' && chars.get(i + 1) == Some(&'.') {
-            // `1...10` too, so a third dot isn't read as the start of `.10`.
-            (Tok::Range, if chars.get(i + 2) == Some(&'.') { 3 } else { 2 })
-        } else if c == ',' {
-            check_comma(&chars, i, space_before, syntax)?;
-            (Tok::Sep, 1)
-        } else if matches!(c, 'x' | 'X') && matches!(chars.get(i + 1), Some('\u{304}' | '\u{305}')) {
-            // x̄ is x plus a combining macron (or overline); there's no single character for it.
-            (Tok::Func(Func::Mean), 2)
-        } else if c.is_alphabetic() && let Some(word) = word_at(&chars, i) {
-            word
-        } else if let Some(f) = functions::symbol(c) {
-            (Tok::Func(f), 1)
-        } else {
-            let tok = match c {
-                '+' => Tok::Plus,
-                '-' | '−' => Tok::Minus,
-                // Middle dot, dot operator, bullet operator and bullet all read as multiplication.
-                '*' | 'x' | 'X' | '×' | '·' | '⋅' | '∙' | '•' => Tok::Mul,
-                '/' | '÷' => Tok::Div,
-                '%' => Tok::Mod,
-                '^' => Tok::Pow,
-                '²' => Tok::Sup(2),
-                '³' => Tok::Sup(3),
-                '√' => Tok::Sqrt,
-                'π' => Tok::Pi,
-                '@' => Tok::Stdin,
-                '(' => Tok::Open(')'),
-                '{' => Tok::Open('}'),
-                '[' => Tok::Open(']'),
-                ')' | '}' | ']' => Tok::Close(c),
-                _ => return Err(Error::new(format!("unexpected character '{c}' at position {pos}"))),
-            };
-            (tok, 1)
-        };
-        let text = chars[i..i + len].iter().collect();
-        tokens.push(Token { tok, text, pos, space_before });
-        space_before = false;
-        i += len;
-    }
-    Ok((tokens, decimal_input))
-}
-
-/// Scans a number literal starting at `start`: returns its value, length in characters,
-/// and whether it has a decimal part.
-fn scan_number(chars: &[char], start: usize, syntax: &Syntax) -> Result<(Value, usize, bool), Error> {
-    let decimal_mark = syntax.pretty.map_or('.', |f| f.decimal);
-    let digits_from = |j: usize| chars[j..].iter().take_while(|c| c.is_ascii_digit()).count();
-
-    let mut plain = String::new();
-    let mut seen_decimal = false;
-    let mut j = start;
-    while let Some(&c) = chars.get(j) {
-        let between_digits = j > start && chars[j - 1].is_ascii_digit() && chars.get(j + 1).is_some_and(char::is_ascii_digit);
-        if c.is_ascii_digit() {
-            plain.push(c);
-        } else if c == '.' && chars.get(j + 1) == Some(&'.') {
-            break; // a range: 1..10
-        } else if c == decimal_mark {
-            plain.push('.');
-            seen_decimal = true;
-        } else if between_digits && is_digit_grouping(c) {
-            // skip
-        } else if between_digits
-            && !seen_decimal
-            && let Some(format) = syntax.pretty
-            && format.group == Some(c)
-            && format.is_group_size(digits_from(j + 1))
-        {
-            // skip
-        } else {
-            break;
-        }
-        j += 1;
-    }
-    let literal: String = chars[start..j].iter().collect();
-    let value = parse_number(&plain)
-        .ok_or_else(|| Error::new(format!("invalid number '{literal}' at position {}", start + 1)))?;
-    Ok((value, j - start, seen_decimal))
-}
-
-/// Rejects a comma that probably isn't a list separator: `1,234` (grouping) and,
-/// where the locale writes decimals with a comma, `3,5`. `1, 234` is always a list.
-fn check_comma(chars: &[char], i: usize, space_before: bool, syntax: &Syntax) -> Result<(), Error> {
-    let before = chars[..i].iter().rev().take_while(|c| c.is_ascii_digit()).count();
-    let after = chars[i + 1..].iter().take_while(|c| c.is_ascii_digit()).count();
-    if space_before || before == 0 || after == 0 || syntax.pretty.is_some() {
-        return Ok(());
-    }
-    let shown: String = chars[i - before..i + 1 + after].iter().collect();
-    let (left, right) = shown.split_once(',').unwrap();
-    if after == 3 {
-        return Err(Error::new(format!(
-            "'{shown}' is ambiguous: write {left}{right} or {left}_{right}, use '{left}, {right}' for a list, \
-             or --pretty to read grouped numbers"
-        )));
-    }
-    if locale::detected().decimal == ',' {
-        return Err(Error::new(format!(
-            "'{shown}' is ambiguous: calc reads '.' as the decimal mark, so write {left}.{right}, \
-             use '{left}, {right}' for a list, or --pretty to read local numbers"
-        )));
-    }
-    Ok(())
-}
-
-fn ends_operand(tok: Tok) -> bool {
-    matches!(tok, Tok::Num(_) | Tok::Pi | Tok::Close(_) | Tok::Stdin | Tok::Sup(_))
-}
-
-fn starts_operand(tok: Tok) -> bool {
-    matches!(tok, Tok::Num(_) | Tok::Pi | Tok::Open(_) | Tok::Sqrt | Tok::Func(_) | Tok::Stdin)
-}
-
-/// Turns a space into a list separator where it sits between two operands (`1 2`),
-/// or before a sign that is attached to the next operand (`1 -2`, but not `1 - 2`).
-fn insert_separators(tokens: &mut Vec<Token>) -> Result<(), Error> {
-    let mut at = Vec::new();
-    for i in 1..tokens.len() {
-        let (prev, token) = (&tokens[i - 1], &tokens[i]);
-        if !token.space_before || !ends_operand(prev.tok) {
-            continue;
-        }
-        let signed = matches!(token.tok, Tok::Plus | Tok::Minus)
-            && tokens.get(i + 1).is_some_and(|next| !next.space_before && starts_operand(next.tok));
-        if !starts_operand(token.tok) && !signed {
-            continue;
-        }
-        // "1 000" was digit grouping before spaces made lists; don't let it quietly become 1, 0.
-        if let (Tok::Num(_), Tok::Num(_)) = (prev.tok, token.tok)
-            && token.text.len() == 3
-            && token.text.starts_with('0')
-            && token.text.chars().all(|c| c.is_ascii_digit())
-        {
-            return Err(Error::new(format!(
-                "'{} {}' looks like digit grouping: write {0}{1} or {0}_{1} (spaces separate list elements)",
-                prev.text, token.text
-            )));
-        }
-        at.push(i);
-    }
-    for i in at.into_iter().rev() {
-        let pos = tokens[i].pos;
-        tokens.insert(i, Token { tok: Tok::Sep, text: " ".into(), pos, space_before: true });
-    }
-    Ok(())
 }
 
 /// Adds an opening bracket at the start for each closing bracket that has none.
@@ -372,7 +142,7 @@ fn infer_opening_brackets(tokens: &mut Vec<Token>) {
     for token in tokens.iter() {
         match token.tok {
             Tok::Open(close) => open.push(close),
-            Tok::Close(c) if open.is_empty() => inferred.push((c, token.pos)),
+            Tok::Close(c) if open.is_empty() => inferred.push(c),
             Tok::Close(c) if open.last() == Some(&c) => {
                 open.pop();
             }
@@ -380,241 +150,210 @@ fn infer_opening_brackets(tokens: &mut Vec<Token>) {
             _ => {}
         }
     }
-    let opening = |c: char| match c {
-        ')' => '(',
-        '}' => '{',
-        _ => '[',
-    };
     // The last unmatched closer is outermost, so its opener goes first.
-    tokens.splice(
-        0..0,
-        inferred.into_iter().rev().map(|(c, pos)| Token {
-            tok: Tok::Open(c),
-            text: opening(c).to_string(),
-            pos,
-            space_before: false,
-        }),
-    );
-}
-
-/// Parses a plain decimal literal exactly; falls back to f64 if it doesn't fit in i128.
-fn parse_number(literal: &str) -> Option<Value> {
-    let (int_part, frac_part) = literal.split_once('.').unwrap_or((literal, ""));
-    if frac_part.contains('.') || (int_part.is_empty() && frac_part.is_empty()) {
-        return None;
-    }
-    let exact = || {
-        let digits: i128 = format!("{int_part}{frac_part}").parse().ok()?;
-        let scale = 10i128.checked_pow(u32::try_from(frac_part.len()).ok()?)?;
-        Ratio::new(digits, scale)
-    };
-    match exact() {
-        Some(r) => Some(Value::Exact(r)),
-        None => literal.parse().ok().map(Value::Approx),
-    }
-}
-
-/// Applies `f` element by element. A list of one pairs with every element of the other.
-fn zip(a: Vec<Value>, b: Vec<Value>, f: fn(Value, Value) -> Result<Value, Error>) -> Result<Vec<Value>, Error> {
-    match (a.len(), b.len()) {
-        (m, n) if m == n => a.into_iter().zip(b).map(|(x, y)| f(x, y)).collect(),
-        (1, _) => b.into_iter().map(|y| f(a[0], y)).collect(),
-        (_, 1) => a.into_iter().map(|x| f(x, b[0])).collect(),
-        (m, n) => Err(Error::new(format!("can't combine lists of {m} and {n} numbers"))),
-    }
-}
-
-fn map(a: Vec<Value>, f: fn(Value) -> Result<Value, Error>) -> Result<Vec<Value>, Error> {
-    a.into_iter().map(f).collect()
-}
-
-/// Ranges stop well short of exhausting memory.
-const MAX_RANGE: usize = 10_000_000;
-
-fn range(from: Vec<Value>, to: Vec<Value>) -> Result<Vec<Value>, Error> {
-    let ([from], [to]) = (from.as_slice(), to.as_slice()) else {
-        return Err(Error::new("a range needs a single number at each end"));
-    };
-    let (from, to) = (*from, *to);
-    let ascending = from.cmp(to).is_le();
-    let step = Value::from_int(if ascending { 1 } else { -1 });
-    let mut out = Vec::new();
-    let mut v = from;
-    while if ascending { v.cmp(to).is_le() } else { v.cmp(to).is_ge() } {
-        if out.len() == MAX_RANGE {
-            return Err(Error::new(format!("range is longer than {MAX_RANGE} numbers")));
-        }
-        out.push(v);
-        v = v.add(step)?;
-    }
-    Ok(out)
+    tokens.splice(0..0, inferred.into_iter().rev().map(|c| Token::synthetic(Tok::Open(c), 0)));
 }
 
 struct Parser<'a> {
     tokens: &'a [Token],
     i: usize,
-    stdin: Option<&'a [Value]>,
+    source: &'a str,
 }
 
-impl Parser<'_> {
+impl<'a> Parser<'a> {
+    fn token(&self) -> Option<&'a Token> {
+        self.tokens.get(self.i)
+    }
+
     fn peek(&self) -> Option<Tok> {
-        self.tokens.get(self.i).map(|t| t.tok)
+        self.token().map(|t| t.tok)
+    }
+
+    /// Where the next token starts, or the end of the input.
+    fn here(&self) -> usize {
+        match self.token() {
+            Some(t) => t.span.start,
+            None => self.tokens.last().map_or(0, |t| t.span.end),
+        }
     }
 
     fn at_list_end(&self) -> bool {
         matches!(self.peek(), None | Some(Tok::Close(_)))
     }
 
-    fn list(&mut self) -> Result<Vec<Value>, Error> {
-        let mut values = Vec::new();
-        if self.at_list_end() {
-            return Ok(values);
-        }
-        loop {
-            values.extend(self.element()?);
-            if self.peek() != Some(Tok::Sep) {
-                return Ok(values);
-            }
-            self.i += 1;
-            if self.at_list_end() {
-                return Ok(values); // trailing comma
-            }
-        }
+    fn text(&self, t: &Token) -> String {
+        self.source.chars().skip(t.span.start).take(t.span.len()).collect()
     }
 
-    fn element(&mut self) -> Result<Vec<Value>, Error> {
+    fn unexpected(&self, t: &Token) -> Error {
+        Error::new(format!("unexpected '{}'", self.text(t))).at(t.span.clone())
+    }
+
+    fn list(&mut self) -> Result<Node, Error> {
+        let start = self.here();
+        let mut items = Vec::new();
+        if !self.at_list_end() {
+            loop {
+                items.push(self.element()?);
+                if self.peek() != Some(Tok::Sep) {
+                    break;
+                }
+                self.i += 1;
+                if self.at_list_end() {
+                    break; // trailing comma
+                }
+            }
+        }
+        if items.len() == 1 {
+            return Ok(items.remove(0));
+        }
+        let end = items.last().map_or(start, |n| n.span.end);
+        Ok(Node::new(Expr::List(items), start..end))
+    }
+
+    fn element(&mut self) -> Result<Node, Error> {
         let from = self.expr()?;
-        if self.peek() == Some(Tok::Range) {
-            self.i += 1;
-            return range(from, self.expr()?);
+        if self.peek() != Some(Tok::Range) {
+            return Ok(from);
         }
-        Ok(from)
+        self.i += 1;
+        Ok(Node::range(from, self.expr()?))
     }
 
-    fn expr(&mut self) -> Result<Vec<Value>, Error> {
-        let mut value = self.term()?;
+    fn expr(&mut self) -> Result<Node, Error> {
+        let mut node = self.term()?;
         loop {
             let op = match self.peek() {
-                Some(Tok::Plus) => Value::add,
-                Some(Tok::Minus) => Value::sub,
-                _ => return Ok(value),
+                Some(Tok::Plus) => Op::Add,
+                Some(Tok::Minus) => Op::Sub,
+                _ => return Ok(node),
             };
             self.i += 1;
-            value = zip(value, self.term()?, op)?;
+            node = Node::binary(op, node, self.term()?);
         }
     }
 
-    fn term(&mut self) -> Result<Vec<Value>, Error> {
-        let mut value = self.unary()?;
+    fn term(&mut self) -> Result<Node, Error> {
+        let mut node = self.unary()?;
         loop {
             let op = match self.peek() {
-                Some(Tok::Mul) => Value::mul,
-                Some(Tok::Div) => Value::div,
-                Some(Tok::Mod) => Value::rem,
+                Some(Tok::Mul) => Op::Mul,
+                Some(Tok::Div) => Op::Div,
+                Some(Tok::Mod) => Op::Rem,
                 // Implicit multiplication: 2π, 3√2, 2{1+1}, {1+1}{2+2}, 2sum{1 2}
-                Some(tok) if starts_operand(tok) => {
-                    value = zip(value, self.unary()?, Value::mul)?;
+                Some(tok) if tok.starts_operand() => {
+                    node = Node::binary(Op::Mul, node, self.unary()?);
                     continue;
                 }
-                _ => return Ok(value),
+                _ => return Ok(node),
             };
             self.i += 1;
-            value = zip(value, self.unary()?, op)?;
+            node = Node::binary(op, node, self.unary()?);
         }
     }
 
-    fn unary(&mut self) -> Result<Vec<Value>, Error> {
-        match self.peek() {
-            Some(Tok::Plus) => {
+    fn unary(&mut self) -> Result<Node, Error> {
+        match self.token() {
+            Some(t) if t.tok == Tok::Plus => {
                 self.i += 1;
                 self.unary()
             }
-            Some(Tok::Minus) => {
+            Some(t) if t.tok == Tok::Minus => {
                 self.i += 1;
-                map(self.unary()?, Value::neg)
+                let operand = self.unary()?;
+                let span = t.span.start..operand.span.end;
+                Ok(Node::new(Expr::Neg(Box::new(operand)), span))
             }
             _ => self.power(),
         }
     }
 
-    fn power(&mut self) -> Result<Vec<Value>, Error> {
+    fn power(&mut self) -> Result<Node, Error> {
         let mut base = self.root()?;
         // ² and ³ bind like ^2 and ^3: -2² is -4, √4² is (√4)², 2²³ is (2²)³.
-        while let Some(Tok::Sup(n)) = self.peek() {
+        while let Some(t) = self.token()
+            && let Tok::Sup(n) = t.tok
+        {
             self.i += 1;
-            base = zip(base, vec![Value::from_int(n)], Value::pow)?;
+            base = Node::binary(Op::Pow, base, Node::new(Expr::Num(Value::from_int(n)), t.span.clone()));
         }
         if self.peek() == Some(Tok::Pow) {
             self.i += 1;
-            return zip(base, self.unary()?, Value::pow);
+            return Ok(Node::binary(Op::Pow, base, self.unary()?));
         }
         Ok(base)
     }
 
-    fn root(&mut self) -> Result<Vec<Value>, Error> {
-        if self.peek() != Some(Tok::Sqrt) {
+    fn root(&mut self) -> Result<Node, Error> {
+        let Some(sqrt) = self.token().filter(|t| t.tok == Tok::Sqrt) else {
             return self.primary();
-        }
+        };
         self.i += 1;
         let mut negate = false;
         while let Some(sign @ (Tok::Plus | Tok::Minus)) = self.peek() {
             negate ^= sign == Tok::Minus;
             self.i += 1;
         }
-        let operand = self.root()?;
-        let operand = if negate { map(operand, Value::neg)? } else { operand };
-        map(operand, Value::sqrt)
+        let mut operand = self.root()?;
+        if negate {
+            let span = operand.span.clone();
+            operand = Node::new(Expr::Neg(Box::new(operand)), span);
+        }
+        let span = sqrt.span.start..operand.span.end;
+        Ok(Node::new(Expr::Sqrt(Box::new(operand)), span))
     }
 
-    fn primary(&mut self) -> Result<Vec<Value>, Error> {
-        let Some(token) = self.tokens.get(self.i) else {
-            return Err(Error::new("unexpected end of expression"));
+    fn primary(&mut self) -> Result<Node, Error> {
+        let Some(t) = self.token() else {
+            let end = self.here();
+            return Err(Error::new("unexpected end of expression").at(end..end));
         };
         self.i += 1;
-        match token.tok {
-            Tok::Num(value) => Ok(vec![value]),
-            Tok::Pi => Ok(vec![Value::Approx(std::f64::consts::PI)]),
-            Tok::Stdin => self.stdin.map(<[Value]>::to_vec).ok_or_else(|| Error::new("'@' needs input on stdin")),
+        let span = t.span.clone();
+        match t.tok {
+            Tok::Num(value) => Ok(Node::new(Expr::Num(value), span)),
+            Tok::Pi => Ok(Node::new(Expr::Num(Value::Approx(std::f64::consts::PI)), span)),
+            Tok::Stdin => Ok(Node::new(Expr::Stdin, span)),
             Tok::Open(close) => {
                 // Empty brackets are only meaningful as a function's list: sum{}.
-                if let Some(t) = self.tokens.get(self.i).filter(|t| matches!(t.tok, Tok::Close(_))) {
-                    return Err(Error::new(format!("unexpected '{}' at position {}", t.text, t.pos)));
+                if let Some(next) = self.token().filter(|n| matches!(n.tok, Tok::Close(_))) {
+                    return Err(self.unexpected(next));
                 }
-                self.bracketed(close, token.pos)
+                self.bracketed(t, close)
             }
             Tok::Func(f) => {
-                let args = match self.tokens.get(self.i) {
-                    Some(t) if !t.space_before && let Tok::Open(close) = t.tok => {
+                let args = match self.token() {
+                    Some(open) if !open.space_before && let Tok::Open(close) = open.tok => {
                         self.i += 1;
-                        self.bracketed(close, t.pos)?
+                        self.bracketed(open, close)?
                     }
                     _ if self.at_list_end() => {
-                        return Err(Error::new(format!(
-                            "'{}' at position {} needs numbers after it",
-                            token.text, token.pos
-                        )));
+                        return Err(Error::new(format!("'{}' needs numbers after it", self.text(t))).at(span));
                     }
                     _ => self.list()?,
                 };
-                f.apply(args)
+                let span = span.start..args.span.end;
+                Ok(Node::new(Expr::Call(f, Box::new(args)), span))
             }
-            _ => Err(Error::new(format!("unexpected '{}' at position {}", token.text, token.pos))),
+            _ => Err(self.unexpected(t)),
         }
     }
 
-    /// Parses a list up to `close`; the opening bracket at `pos` is already consumed.
-    fn bracketed(&mut self, close: char, pos: usize) -> Result<Vec<Value>, Error> {
-        let values = self.list()?;
-        match self.tokens.get(self.i) {
+    /// Parses a list up to `close`; the opening bracket `open` is already consumed.
+    fn bracketed(&mut self, open: &Token, close: char) -> Result<Node, Error> {
+        let mut inner = self.list()?;
+        match self.token() {
             Some(t) if t.tok == Tok::Close(close) => {
                 self.i += 1;
-                Ok(values)
+                inner.span = open.span.start..t.span.end;
+                Ok(inner)
             }
             Some(t) => Err(Error::new(format!(
-                "expected '{close}' to match bracket at position {pos}, found '{}' at position {}",
-                t.text, t.pos
-            ))),
-            None => Err(Error::new(format!("missing '{close}' for bracket at position {pos}"))),
+                "expected '{close}' to match the bracket at position {}",
+                open.span.start + 1
+            ))
+            .at(t.span.clone())),
+            None => Err(Error::new(format!("missing '{close}'")).at(open.span.clone())),
         }
     }
 }
@@ -623,6 +362,7 @@ impl Parser<'_> {
 mod tests {
     use super::*;
     use crate::format::{Precision, format};
+    use crate::locale::NumberFormat;
 
     fn eval_with(input: &str, syntax: &Syntax) -> String {
         match evaluate(input, syntax) {
@@ -663,8 +403,21 @@ mod tests {
     fn errors_remain() {
         assert!(eval("{1+2)").starts_with("error: expected '}'"));
         assert!(eval("{1+2)x3}").starts_with("error"));
-        assert!(eval("}").starts_with("error: unexpected '}' at position 1"));
-        assert!(eval("{1+2").starts_with("error: missing '}'"));
+        assert_eq!(eval("}"), "error: unexpected '}'");
+        assert_eq!(eval("{1+2"), "error: missing '}'");
+    }
+
+    #[test]
+    fn errors_point_at_the_input() {
+        let shown = |input: &str| match evaluate(input, &Syntax::default()) {
+            Err(e) => e.in_source(input).to_string(),
+            Ok(_) => panic!("{input} should fail"),
+        };
+        assert_eq!(shown("2x{3+4"), "missing '}'\n  2x{3+4\n    ^");
+        assert_eq!(shown("1+2/0"), "division by zero\n  1+2/0\n    ^^^");
+        assert_eq!(shown("1 q"), "unexpected character 'q'\n  1 q\n    ^");
+        assert!(shown("1,234").ends_with("\n  1,234\n  ^^^^^"));
+        assert!(shown("{1 2}+{1 2 3}").ends_with("^^^^^^^^^^^^^"));
     }
 
     #[test]
@@ -683,6 +436,9 @@ mod tests {
         assert!(eval("1 000 x 3").contains("looks like digit grouping"));
         assert!(eval("1,234").contains("ambiguous"));
         assert!(eval("1,234.5").contains("ambiguous"));
+        assert_eq!(eval("3,5"), "3 5");
+        let comma = Syntax { local_decimal: ',', ..Syntax::default() };
+        assert!(eval_with("3,5", &comma).contains("'.' as the decimal mark"));
     }
 
     #[test]
@@ -704,6 +460,7 @@ mod tests {
         assert_eq!(eval("2sum{1 2}"), "6");
         assert_eq!(eval("Σ1 2 3"), "6");
         assert_eq!(eval("∏1 2 3 4"), "24");
+        assert_eq!(eval("product 1 2 3 4"), "24");
         assert_eq!(eval("avg 1 2 3 4"), "2.5");
         assert_eq!(eval("x\u{304} 1 2 3 4"), "2.5");
         assert_eq!(eval("x\u{305}{1 2 3 4}"), "2.5");
@@ -758,12 +515,21 @@ mod tests {
     }
 
     #[test]
+    fn streaming_is_decided_from_the_tree() {
+        let program = |s: &str| Expression::parse(s, &Syntax::default()).unwrap().compile().unwrap();
+        assert!(program("2x{3}+abs 1").streams());
+        assert!(!program("sum 1").streams());
+        assert!(!program("1 2").streams());
+        assert!(!program("1..3").streams());
+    }
+
+    #[test]
     fn pretty_input() {
-        let en = Syntax { pretty: Some(NumberFormat::from_example("1,234.5").unwrap()) };
-        let de = Syntax { pretty: Some(NumberFormat::from_example("1.234,5").unwrap()) };
+        let syntax = |example| Syntax { pretty: NumberFormat::from_example(example).ok(), ..Syntax::default() };
+        let (en, de) = (syntax("1,234.5"), syntax("1.234,5"));
         assert_eq!(eval_with("3,141.6+1", &en), "3142.6");
         assert_eq!(eval_with("1,2", &en), "1 2");
-        assert_eq!(eval_with("12,34,567", &Syntax { pretty: NumberFormat::from_example("12,34,567.8").ok() }), "1234567");
+        assert_eq!(eval_with("12,34,567", &syntax("12,34,567.8")), "1234567");
         assert_eq!(eval_with("3.141,6+1", &de), "3142.6");
         assert_eq!(eval_with("1,5 2,5", &de), "1.5 2.5");
         assert!(eval_with("3.14", &de).starts_with("error"));

@@ -1,6 +1,6 @@
 //! Named functions. Every function takes one list (a single number is a list of one).
 
-use crate::Error;
+use crate::error::Error;
 use crate::value::Value;
 
 #[derive(Clone, Copy, Debug, PartialEq)]

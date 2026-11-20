@@ -3,7 +3,7 @@
 
 use std::cmp::Ordering;
 
-use crate::Error;
+use crate::error::Error;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Value {

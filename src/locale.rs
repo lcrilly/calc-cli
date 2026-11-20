@@ -6,7 +6,7 @@
 
 use std::sync::OnceLock;
 
-use crate::Error;
+use crate::error::Error;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct NumberFormat {
@@ -25,7 +25,7 @@ impl NumberFormat {
     /// The last separator is the decimal mark, so the example must have a fractional part.
     pub fn from_example(example: &str) -> Result<NumberFormat, Error> {
         let invalid = || {
-            Error::new(format!(
+            Error::usage(format!(
                 "invalid number format '{example}' (give an example with decimals, such as 1,234.5 or 1.234,5)"
             ))
         };
