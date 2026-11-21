@@ -5,7 +5,7 @@
 * Expressions are expected on the command line; basic usage is `calc 9+7`
 * No quoting or escaping is needed. Alternatives are provided for characters that have special meaning to common shells such as `()*`
 * Use ASCII and unicode characters to minimize on typing and construct natural looking expressions.
-* Multiple styles of brackets avoid escaping aid readability for complex nesting.
+* Multiple styles of brackets to avoid escaping and aid readability of complex nesting.
 * Opening brackets are optional. An unmatched closing bracket encapsulates all the numbers before it.
 * Designed for pipelining. Receive expressions or numbers from stdin and apply partial expressions to them.
 * Use a mix of infix notation `calc 1+2` and functional programming (spreadsheet) style `calc sum(1,2)` for access to scientific functions.
@@ -56,6 +56,7 @@ date +%s | calc +60x60x24  →  # Apply partial expressions to values from stdin
 | `sin` `cos` `tan`             | per element; angles in radians       |
 
 ### Usage notes
+
 - Adjacent terms multiply at the same precedence as `x`: `2π`, `3√2`, `6÷2{1+2}` = 9 .
 - `%`/`mod` shares precedence with `x` and `÷`, and the result takes the sign of the divisor (floored, as in Python): `-7 mod 3` = 2, `7%-3` = -2. Non-integers work too: `5.5 mod 2` = `1.5` .
 - `√` binds to the term right after it: `√4^2` is `(√4)^2`; write `√{4^2}` for the other reading.
@@ -68,28 +69,27 @@ date +%s | calc +60x60x24  →  # Apply partial expressions to values from stdin
 
 ### Shell notes
 
-- `(` `)` and `*` need quoting or escaping, or use the shell-safe  equivalents: `{}` and `x` .
-- zsh rejects a `}` that ends a word when its `{` is in a different word, so
-  `calc 2x{3 + 4}` fails in zsh before `calc` runs. Keep each brace group free
-  of spaces (`calc 2 x {3+4}`) or quote it. The same may apply to an
-  unmatched `}` at the end of a word (`calc 2+4+8} /2`); keep it mid-word
-  (`calc 2+4+8}/2`) or quote it. bash treats a lone `}` as literal.
+- `(` `)` and `*` typically need quoting or escaping; use the shell-safe equivalents instead: `{}` and `x` .
 - Avoid commas or `..` inside `{}` because brace expansion turns
   `avg{1,2,3}` into `avg1 avg2 avg3` and `{1..3}` into `1 2 3` before `calc` runs.
+- zsh is particular about closing braces `}`:
+  * When `{` and `}` are in different _words_ (separated by spaces) a parse error is thrown.
+    For `calc 2x{3 + 4}` remove spaces or quote the whole thing.
+  * When using an unmatched `}`, avoid a trailing space. `calc 2+4+8} /2` throws a parse error.
 
 ### Stdin notes
 
 - With no expression arguments, stdin is evaluated and printed: each line can be any expression.
 - Multiple lines of stdin are merged to form one list (or see `--rows` for alternate).
+- When an expression only works element by element (no functions that combine or reorder), each result is printed as its line arrives, so `tail -f` pipelines work.
+  A bad line is reported on stderr with its line number and the rest carry on; the exit status is 1.
+- When the whole list is needed (`sum`, `avg`, …) a bad line means no result at all, since a total that silently skipped a line would be wrong.
 - Values received from stdin can be combined with arguments to chain compound expressions.
   * Arguments that start with an operator (`+ x * ÷ / % ^ ² ³ mod`) continue the stdin list: `seq 3 | calc x2` .
   * Arguments that end with an operator or function apply stdin as their last operand: `seq 3 | calc 2^` .
   * An unmatched closing bracket also wraps the stdin value: `seq 1 3 | calc +4}/2` gives `2.5`, `3`, `3.5`.
   * `@` explicitly positions stdin, as often as needed: `seq 1 20 | calc max@-min@` .
   * Complete arguments don't read stdin, so `calc 1+2` is safe inside a `while read` loop.
-- When an expression only works element by element (no functions that combine or reorder), each result is printed as its line arrives, so `tail -f` pipelines work.
-  A bad line is reported on stderr with its line number and the rest carry on; the exit status is 1.
-- When the whole list is needed (`sum`, `avg`, …) a bad line means no result at all, since a total that silently skipped a line would be wrong.
 
 ## Output
 
@@ -105,25 +105,24 @@ Arithmetic is exact (i128 rationals) until a result is irrational or overflows, 
 | Option syntax                     | |
 |-----------------------------------|-|
 | `-p` `--precision=N\|max`         | Set precision (decimal places) for output (default: `5`) |
-| `--pretty[=always\|auto\|SAMPLE]` | Read and write numbers using the locale's style, including digit grouping. `SAMPLE` explicitly sets the style, e.g. `10,00,000.1` |
+| `--pretty[=always\|auto\|SAMPLE]` | Read and write numbers using the locale's style for digit grouping and decimals. |
 | `-r` `--rows`                     | Preserve rows of input instead of merging into a single list |
 
 Command line options must be specified first, before the expression, to avoid being mistaken for a negative number. `--` explicitly ends the options.
 
 ### Pretty numbers
 
-Plain input is the same everywhere: `.` for decimals, `,` or spaces between list elements, `_` to group digits. So a script gives the same answer on every machine.
-`--pretty` switches to the style people read:
+With `--pretty`, the locale's number representation for digit grouping and decimals is detected and displayed on output. When stdin is present, the locale's style is used to interpret the values so that commas (`,`) are **not** treated as a list separator.
 
 ```shell
 $ calc --pretty -p1 1000π                    # en_GB, en_US
 3,141.6
 $ calc --pretty -p1 1000π                    # de_DE
 3.141,6
-$ calc --pretty -p1 1000π | calc --pretty +1 # --pretty reads the style back
+$ calc --pretty -p1 1000π | calc --pretty +1 # Not a list
 3,142.6
-$ calc --pretty=1,23,456.7 12345678          # or give an example of the style
-1,23,45,678
+$ calc --pretty=0,00,000.0 ∑1…1234}/2        # Provide sample style
+3,80,997.5
 ```
 
 - `--pretty=auto` only applies to a terminal, so pipes get plain numbers; `--pretty=never` turns it off.
