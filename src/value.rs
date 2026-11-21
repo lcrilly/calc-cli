@@ -229,6 +229,24 @@ impl Value {
         }
     }
 
+    /// n! for a whole number n: exact while it fits in i128 (up to 33!), then f64 up to 170!.
+    pub fn factorial(self) -> Result<Value, Error> {
+        let n = match self {
+            Value::Exact(r) if r.den == 1 && r.num >= 0 => r.num,
+            Value::Approx(f) if f >= 0.0 && f.fract() == 0.0 => f.min(171.0) as i128,
+            _ => return Err(Error::new("factorial needs a whole number ≥ 0")),
+        };
+        if n > 170 {
+            return Err(Error::new("result out of range"));
+        }
+        let (mut exact, mut float) = (Some(1i128), 1.0f64);
+        for k in 2..=n {
+            exact = exact.and_then(|p| p.checked_mul(k));
+            float *= k as f64;
+        }
+        Ok(exact.map_or(Value::Approx(float), Value::from_int))
+    }
+
     pub fn neg(self) -> Value {
         match self {
             Value::Exact(r) => r.checked_neg().map_or(Value::Approx(-r.to_f64()), Value::Exact),

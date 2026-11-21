@@ -90,6 +90,15 @@ fn errors_show_where() {
 }
 
 #[test]
+fn factorial_continues_stdin() {
+    assert_eq!(ok(&["!"], Some("3\n4\n5\n")), "6\n24\n120\n");
+    assert_eq!(ok(&["5!", "x2"], None), "240\n");
+    let out = calc(&["5!!"], None);
+    assert_eq!(out.code, 1);
+    assert!(out.stderr.contains("'!!' isn't supported"));
+}
+
+#[test]
 fn rows_are_preserved() {
     assert_eq!(ok(&["-r", "sum"], Some("1 2\n3 4\n")), "3\n7\n");
     assert_eq!(ok(&["--rows", "x10"], Some("1 2\n3 4\n")), "10 20\n30 40\n");

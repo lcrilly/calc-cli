@@ -24,6 +24,7 @@ pub enum Func {
     Sin,
     Cos,
     Tan,
+    Factorial,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -53,6 +54,8 @@ const NAMES: &[(&str, Func)] = &[
     ("sin", Func::Sin),
     ("sum", Func::Sum),
     ("tan", Func::Tan),
+    ("factorial", Func::Factorial),
+    ("fact", Func::Factorial),
     ("ln", Func::Ln),
 ];
 
@@ -79,7 +82,7 @@ impl Func {
         use Func::*;
         match self {
             Sum | Product | Mean | Median | Min | Max | Stdev => Kind::Aggregate,
-            Abs | Floor | Ceil | Round | Ln | Log | Exp | Sin | Cos | Tan => Kind::Elementwise,
+            Abs | Floor | Ceil | Round | Ln | Log | Exp | Sin | Cos | Tan | Factorial => Kind::Elementwise,
         }
     }
 
@@ -123,6 +126,7 @@ impl Func {
             Sin => float(args, f64::sin),
             Cos => float(args, f64::cos),
             Tan => float(args, f64::tan),
+            Factorial => args.into_iter().map(Value::factorial).collect(),
         }
     }
 }

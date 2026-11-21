@@ -34,6 +34,8 @@ pub enum Tok {
     Pow,
     /// A superscript power: ² or ³.
     Sup(i128),
+    /// Postfix factorial: `5!`.
+    Bang,
     Sqrt,
     Pi,
     /// An opening bracket, holding the character that closes it.
@@ -51,7 +53,7 @@ impl Tok {
     }
 
     fn ends_operand(self) -> bool {
-        matches!(self, Tok::Num(_) | Tok::Pi | Tok::Close(_) | Tok::Stdin | Tok::Sup(_))
+        matches!(self, Tok::Num(_) | Tok::Pi | Tok::Close(_) | Tok::Stdin | Tok::Sup(_) | Tok::Bang)
     }
 }
 
@@ -107,6 +109,10 @@ pub fn tokenize(input: &str, syntax: &Syntax) -> Result<Vec<Token>, Error> {
         } else if c == '.' && chars.get(i + 1) == Some(&'.') {
             // `1...10` too, so a third dot isn't read as the start of `.10`.
             (Tok::Range, if chars.get(i + 2) == Some(&'.') { 3 } else { 2 })
+        } else if c == '!' && chars.get(i + 1) == Some(&'!') {
+            // n!! could mean (n!)! or the double factorial, and an interactive shell
+            // replaces an unquoted !! with the previous command anyway.
+            return Err(Error::new("'!!' isn't supported: write {n!}! for the factorial of a factorial").at(i..i + 2));
         } else if c == ',' {
             check_comma(&chars, i, space_before, syntax)?;
             (Tok::Sep, 1)
@@ -126,6 +132,7 @@ pub fn tokenize(input: &str, syntax: &Syntax) -> Result<Vec<Token>, Error> {
                 '/' | '÷' => Tok::Div,
                 '%' => Tok::Mod,
                 '^' => Tok::Pow,
+                '!' => Tok::Bang,
                 '²' => Tok::Sup(2),
                 '³' => Tok::Sup(3),
                 '√' => Tok::Sqrt,

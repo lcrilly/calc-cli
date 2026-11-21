@@ -7,9 +7,10 @@
 //!   expr    := term (('+' | '-') term)*
 //!   term    := unary (('×' | '÷' | '%') unary | unary)*   -- adjacency is implicit ×
 //!   unary   := ('+' | '-') unary | power
-//!   power   := root SUP* ('^' unary)?                     -- right-associative
+//!   power   := root (SUP | '!')* ('^' unary)?             -- right-associative
 //!   root    := '√' ('+' | '-')* root | primary
-//!   primary := number | 'π' | '@' | '(' list ')' | call
+//!   primary := atom '!'*                                  -- factorial binds tightest
+//!   atom    := number | 'π' | '@' | '(' list ')' | call
 //!   call    := FUNC '(' list ')' | FUNC list              -- without a bracket, takes the rest
 //!
 //! A closing bracket with no opening bracket implies one at the very start of the
@@ -17,6 +18,7 @@
 
 use crate::error::Error;
 use crate::eval::{Expr, Node, Op};
+use crate::functions::Func;
 use crate::lexer::{self, Syntax, Tok, Token};
 use crate::value::Value;
 
@@ -61,7 +63,7 @@ impl Expression {
     /// True when the expression starts with an operator, so it continues a value read from stdin.
     /// A leading '-' is left out: `calc -2` is a negative number, and must not wait on stdin.
     pub fn is_continuation(&self) -> bool {
-        self.tokens.first().is_some_and(|t| matches!(t.tok, Tok::Plus | Tok::Mul | Tok::Div | Tok::Mod | Tok::Pow | Tok::Sup(_)))
+        self.tokens.first().is_some_and(|t| matches!(t.tok, Tok::Plus | Tok::Mul | Tok::Div | Tok::Mod | Tok::Pow | Tok::Sup(_) | Tok::Bang))
     }
 
     /// True when the expression ends with an operator or function, so stdin completes it.
@@ -260,11 +262,14 @@ impl<'a> Parser<'a> {
     fn power(&mut self) -> Result<Node, Error> {
         let mut base = self.root()?;
         // ² and ³ bind like ^2 and ^3: -2² is -4, √4² is (√4)², 2²³ is (2²)³.
-        while let Some(t) = self.token()
-            && let Tok::Sup(n) = t.tok
-        {
+        // A factorial can follow them too: 2²! is (2²)!.
+        while let Some(t) = self.token() {
+            base = match t.tok {
+                Tok::Sup(n) => Node::binary(Op::Pow, base, Node::new(Expr::Num(Value::from_int(n)), t.span.clone())),
+                Tok::Bang => factorial(base, t),
+                _ => break,
+            };
             self.i += 1;
-            base = Node::binary(Op::Pow, base, Node::new(Expr::Num(Value::from_int(n)), t.span.clone()));
         }
         if self.peek() == Some(Tok::Pow) {
             self.i += 1;
@@ -292,7 +297,17 @@ impl<'a> Parser<'a> {
         Ok(Node::new(Expr::Sqrt(Box::new(operand)), span))
     }
 
+    /// An atom and any factorials after it, so `√4!` is √(4!) and `-3!` is -(3!).
     fn primary(&mut self) -> Result<Node, Error> {
+        let mut node = self.atom()?;
+        while let Some(t) = self.token().filter(|t| t.tok == Tok::Bang) {
+            self.i += 1;
+            node = factorial(node, t);
+        }
+        Ok(node)
+    }
+
+    fn atom(&mut self) -> Result<Node, Error> {
         let Some(t) = self.token() else {
             let end = self.here();
             return Err(Error::new("unexpected end of expression").at(end..end));
@@ -345,6 +360,11 @@ impl<'a> Parser<'a> {
             None => Err(Error::new(format!("missing '{close}'")).at(open.span.clone())),
         }
     }
+}
+
+fn factorial(operand: Node, bang: &Token) -> Node {
+    let span = operand.span.start..bang.span.end;
+    Node::new(Expr::Call(Func::Factorial, Box::new(operand)), span)
 }
 
 #[cfg(test)]
@@ -499,6 +519,34 @@ mod tests {
         assert_eq!(eval("1…5"), "1 2 3 4 5");
         assert_eq!(eval("1...5"), "1 2 3 4 5");
         assert_eq!(eval("sum 1 … 4"), "10");
+    }
+
+    #[test]
+    fn factorials() {
+        assert_eq!(eval("5!"), "120");
+        assert_eq!(eval("0!"), "1");
+        same("-3!", "-6");
+        same("2^3!", "64");
+        same("3!²", "36");
+        same("2²!", "24");
+        same("√4!", "√24");
+        same("2x3!", "12");
+        same("3!4", "24");
+        same("{3!}!", "720");
+        assert_eq!(eval("{1 2 3 4}!"), "1 2 6 24");
+        assert_eq!(eval("5! 3"), "120 3");
+        assert_eq!(eval("fact 1..5"), "1 2 6 24 120");
+        assert_eq!(eval("factorial(5)"), "120");
+        assert_eq!(eval("FACT{5}x2"), "240");
+        assert_eq!(eval("33!"), "8683317618811886495518194401280000000");
+        assert_eq!(eval("34!"), "2.95233e38");
+        assert_eq!(eval("170!"), "7.25742e306");
+        assert_eq!(eval("171!"), "error: result out of range");
+        assert!(eval("2.5!").contains("whole number"));
+        assert!(eval("{-1}!").contains("whole number"));
+        assert!(eval("π!").contains("whole number"));
+        assert!(eval("3!!").contains("'!!' isn't supported"));
+        assert!(eval("!").starts_with("error"));
     }
 
     #[test]

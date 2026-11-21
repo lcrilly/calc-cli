@@ -26,13 +26,14 @@ Usage:
   calc [OPTIONS] EXPRESSION...
   ... | calc [OPTIONS] [PARTIAL EXPRESSION...]
 
-Operators:  +  -  x * × · •  ÷ /  % mod  ^  ² ³
+Operators:  +  -  x * × · •  ÷ /  % mod  ^  ² ³  √  ∑  ∏  !
 Brackets:   {} or () or []
 Symbols:    π (pi)  @ (stdin)
 Lists:      1 2 3  or  1,2,3
 Ranges:     1..10 or 1…10
-Functions:  sqrt √  sum ∑  product prod ∏  avg mean average x̄  median  min  max
-            stdev  abs  floor  ceil  round  ln  log  exp  sin  cos  tan
+Functions:  sqrt √  sum ∑  product prod ∏  factorial fact !  ln  log  exp
+            avg mean average x̄  median  min  max  stdev  abs  round
+            floor  ceil  sin  cos  tan
 
 Arithmetic applies element by element: {1 2 3}x2 is 2 4 6. Lists print one
 number per line. Adjacent terms multiply: 2π, 3√2, 2{1+1}. Group digits with _
@@ -52,7 +53,8 @@ Options:
                                  auto only applies to terminal output, SAMPLE
                                  explicitly sets the style, e.g. 1.234,5
   -r, --rows                     Preserve rows: each line of stdin is treated as
-                                 its own list, and gives one line of output.
+                                 its own list (not merged) and produces the same
+                                 number of output rows.
   -V, --version                  Show version
 
 See README at https://github.com/lcrilly/calc-cli";

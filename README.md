@@ -28,32 +28,33 @@ date +%s | calc +60x60x24  →  # Apply partial expressions to values from stdin
 
 ## Constructing expressions
 
-| Operators           | Meaning                                   |
-|---------------------|-------------------------------------------|
-| `+` , `-`           | add , subtract                            |
-| `*` `x` `×` `·` `•` | multiply                                  |
-| `÷` `/`             | divide                                    |
-| `%` `mod`           | modulo (remainder)                        |
-| `^` , `²` , `³`     | power (right-associative) , square , cube |
+| Operators            | Meaning                                    |
+|----------------------|--------------------------------------------|
+| `+` , `-`            | add , subtract                             |
+| `*` `x` `×` `·` `•`  | multiply                                   |
+| `÷` `/`              | divide                                     |
+| `%` `mod`            | modulo (remainder)                         |
+| `^` , `²` , `³`      | power (right-associative) , square , cube  |
 
-| Symbols             | Meaning                                   |
-|---------------------|-------------------------------------------|
-| `{}` `()` `[]`      | brackets, nestable                        |
-| `…` `..` `...`      | ranges (stepping +1 or -1), e.g. `1…10`   |
-| `√` `sqrt`          | square root                               |
-| `π` `pi`            | π (f64 precision)                         |
-| `@`                 | stdin, as a list                          |
+| Symbols              | Meaning                                    |
+|----------------------|--------------------------------------------|
+| `{}` `()` `[]`       | brackets, nestable                         |
+| `…` `..` `...`       | ranges (stepping +1 or -1), e.g. `1…10`    |
+| `π` `pi`             | π (f64 precision)                          |
+| `@`                  | stdin, as a list                           |
 
-| Functions                     | Result                               |
-|-------------------------------|--------------------------------------|
-| `sum` `∑` `Σ`                 | total (0 for an empty list)          |
-| `product` `prod` `∏` `Π`      | product                              |
-| `avg` `average` `mean` `x̄`    | arithmetic mean                      |
-| `median` `min` `max`          |                                      |
-| `stdev`                       | sample standard deviation (n − 1)    |
-| `abs` `floor` `ceil` `round`  | applied per list element             |
-| `ln` `log` `exp`              | per element; `log` is base 10        |
-| `sin` `cos` `tan`             | per element; angles in radians       |
+| Functions                     | Result                            |
+|-------------------------------|-----------------------------------|
+| `sqrt` `√`                    | square root                       |
+| `sum` `∑` `Σ`                 | total (0 for an empty list)       |
+| `product` `prod` `∏` `Π`      | product                           |
+| `avg` `average` `mean` `x̄`    | arithmetic mean                   |
+| `median` `min` `max`          |                                   |
+| `stdev`                       | sample standard deviation (n − 1) |
+| `abs` `floor` `ceil` `round`  | applied per list element          |
+| `factorial` `fact` `!`        | per element; `fact(n)` = `n!`     |
+| `ln` `log` `exp`              | per element; `log` is base 10     |
+| `sin` `cos` `tan`             | per element; angles in radians    |
 
 ### Usage notes
 
@@ -61,6 +62,7 @@ date +%s | calc +60x60x24  →  # Apply partial expressions to values from stdin
 - `%`/`mod` shares precedence with `x` and `÷`, and the result takes the sign of the divisor (floored, as in Python): `-7 mod 3` = 2, `7%-3` = -2. Non-integers work too: `5.5 mod 2` = `1.5` .
 - `√` binds to the term right after it: `√4^2` is `(√4)^2`; write `√{4^2}` for the other reading.
 - Superscripts are atomic and work left to right: `2²³` = `(2²)³` = `64` .
+- `!` binds tightest of all, to the term just before it: `-3!` = -6, `2^3!` = 64, `√4!` = √24. Factorials are exact up to `33!`, and f64 up to `170!`.
 - Spaces are primarily for separating items in a list and can also be used to provide whitespace between operators. Take care with subtraction because `calc 1 -2` produces a list.
 - Commas also separate elements and trailing commas are inert: `sum(1,2,3,)`.
 - Operations are applied per element: `{1 2 3}x2` is 2 4 6, `2^{1 2 3}` is 2 4 8, `{1 2}+{10 20}` is 11 22. Lists between operators must be of the same length.
@@ -70,6 +72,8 @@ date +%s | calc +60x60x24  →  # Apply partial expressions to values from stdin
 ### Shell notes
 
 - `(` `)` and `*` typically need quoting or escaping; use the shell-safe equivalents instead: `{}` and `x` .
+- `!` is safe at the end of a word (`calc 5!`, `calc 5! x2`) but anything that follows it
+   triggers history expansion - use single quotes to prevent history expansion. `!!` is rejected because double factorial is not supported - use `{5!}!` for factorial-of-factorial.
 - Avoid commas or `..` inside `{}` because brace expansion turns
   `avg{1,2,3}` into `avg1 avg2 avg3` and `{1..3}` into `1 2 3` before `calc` runs.
 - zsh is particular about closing braces `}`:
@@ -85,7 +89,7 @@ date +%s | calc +60x60x24  →  # Apply partial expressions to values from stdin
   A bad line is reported on stderr with its line number and the rest carry on; the exit status is 1.
 - When the whole list is needed (`sum`, `avg`, …) a bad line means no result at all, since a total that silently skipped a line would be wrong.
 - Values received from stdin can be combined with arguments to chain compound expressions.
-  * Arguments that start with an operator (`+ x * ÷ / % ^ ² ³ mod`) continue the stdin list: `seq 3 | calc x2` .
+  * Arguments that start with an operator (`+ x * ÷ / % ^ ² ³ ! mod`) continue the stdin list: `seq 3 | calc x2` .
   * Arguments that end with an operator or function apply stdin as their last operand: `seq 3 | calc 2^` .
   * An unmatched closing bracket also wraps the stdin value: `seq 1 3 | calc +4}/2` gives `2.5`, `3`, `3.5`.
   * `@` explicitly positions stdin, as often as needed: `seq 1 20 | calc max@-min@` .
