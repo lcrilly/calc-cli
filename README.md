@@ -50,11 +50,14 @@ date +%s | calc +60x60x24  →  # Apply partial expressions to values from stdin
 | `product` `prod` `∏` `Π`      | product                           |
 | `avg` `average` `mean` `x̄`    | arithmetic mean                   |
 | `median` `min` `max`          |                                   |
+| `mode`                        | most frequent (returns all ties)  |
 | `stdev`                       | sample standard deviation (n − 1) |
 | `abs` `floor` `ceil` `round`  | applied per list element          |
 | `factorial` `fact` `!`        | per element; `fact(n)` = `n!`     |
 | `ln` `log` `exp`              | per element; `log` is base 10     |
 | `sin` `cos` `tan`             | per element; angles in radians    |
+| `asin` `acos` `atan`          | per element; inverse, in radians  |
+| `sinh` `cosh` `tanh`          | per element; hyperbolic           |
 
 ### Usage notes
 

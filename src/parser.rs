@@ -495,6 +495,31 @@ mod tests {
     }
 
     #[test]
+    fn mode() {
+        assert_eq!(eval("mode 1 2 2 3"), "2");
+        assert_eq!(eval("mode 3 1 3 1 2"), "1 3"); // ties, in ascending order
+        assert_eq!(eval("mode 1 2 3"), "1 2 3");
+        assert_eq!(eval("mode 5"), "5");
+        assert_eq!(eval("mode 0.5 1/2 2"), "0.5");
+        assert_eq!(eval("mode{}"), "error: mode of an empty list");
+        assert_eq!(eval("2xmode{1 4 4}"), "8");
+    }
+
+    #[test]
+    fn inverse_and_hyperbolic_trig() {
+        assert_eq!(eval("asin 1"), "1.5708");
+        assert_eq!(eval("acos{1 0}"), "0 1.5708");
+        assert_eq!(eval("atan 1"), "0.7854");
+        same("4atan 1", "π");
+        assert_eq!(eval("acos 2"), "error: undefined result");
+        assert_eq!(eval("sinh 1"), "1.1752");
+        assert_eq!(eval("cosh 0"), "1");
+        assert_eq!(eval("tanh 1"), "0.76159");
+        same("sin asin 0.5", "0.5");
+        assert_eq!(eval("2sinh{0}"), "0");
+    }
+
+    #[test]
     fn ranges() {
         assert_eq!(eval("1..5"), "1 2 3 4 5");
         assert_eq!(eval("3..1"), "3 2 1");

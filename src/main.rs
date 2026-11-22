@@ -32,8 +32,8 @@ Symbols:    π (pi)  @ (stdin)
 Lists:      1 2 3  or  1,2,3
 Ranges:     1..10 or 1…10
 Functions:  sqrt √  sum ∑  product prod ∏  factorial fact !  ln  log  exp
-            avg mean average x̄  median  min  max  stdev  abs  round
-            floor  ceil  sin  cos  tan
+            avg mean average x̄  median  mode  min  max  stdev  abs  round
+            floor  ceil  sin  cos  tan  asin  acos  atan  sinh  cosh  tanh
 
 Arithmetic applies element by element: {1 2 3}x2 is 2 4 6. Lists print one
 number per line. Adjacent terms multiply: 2π, 3√2, 2{1+1}. Group digits with _

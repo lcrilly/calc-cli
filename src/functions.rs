@@ -10,6 +10,8 @@ pub enum Func {
     Product,
     Mean,
     Median,
+    /// The most frequent value, or every value that ties for most frequent.
+    Mode,
     Min,
     Max,
     Stdev,
@@ -24,6 +26,12 @@ pub enum Func {
     Sin,
     Cos,
     Tan,
+    Asin,
+    Acos,
+    Atan,
+    Sinh,
+    Cosh,
+    Tanh,
     Factorial,
 }
 
@@ -54,6 +62,13 @@ const NAMES: &[(&str, Func)] = &[
     ("sin", Func::Sin),
     ("sum", Func::Sum),
     ("tan", Func::Tan),
+    ("asin", Func::Asin),
+    ("acos", Func::Acos),
+    ("atan", Func::Atan),
+    ("sinh", Func::Sinh),
+    ("cosh", Func::Cosh),
+    ("tanh", Func::Tanh),
+    ("mode", Func::Mode),
     ("factorial", Func::Factorial),
     ("fact", Func::Factorial),
     ("ln", Func::Ln),
@@ -81,8 +96,10 @@ impl Func {
     pub fn kind(self) -> Kind {
         use Func::*;
         match self {
-            Sum | Product | Mean | Median | Min | Max | Stdev => Kind::Aggregate,
-            Abs | Floor | Ceil | Round | Ln | Log | Exp | Sin | Cos | Tan | Factorial => Kind::Elementwise,
+            Sum | Product | Mean | Median | Mode | Min | Max | Stdev => Kind::Aggregate,
+            Abs | Floor | Ceil | Round | Ln | Log | Exp | Sin | Cos | Tan | Asin | Acos | Atan | Sinh | Cosh | Tanh | Factorial => {
+                Kind::Elementwise
+            }
         }
     }
 
@@ -105,6 +122,13 @@ impl Func {
                     one(sorted[n / 2 - 1].add(sorted[n / 2])?.div(Value::from_int(2))?)
                 }
             }
+            Mode => {
+                let sorted = sorted(args);
+                // Runs of equal values, in ascending order; keep every run of the greatest length.
+                let runs: Vec<&[Value]> = sorted.chunk_by(|a, b| a.total_cmp(*b).is_eq()).collect();
+                let most = runs.iter().map(|run| run.len()).max().ok_or_else(|| Error::new("mode of an empty list"))?;
+                Ok(runs.into_iter().filter(|run| run.len() == most).map(|run| run[0]).collect())
+            }
             Min => one(args.into_iter().min_by(|a, b| a.total_cmp(*b)).ok_or_else(|| Error::new("min of an empty list"))?),
             Max => one(args.into_iter().max_by(|a, b| a.total_cmp(*b)).ok_or_else(|| Error::new("max of an empty list"))?),
             Stdev => {
@@ -126,6 +150,12 @@ impl Func {
             Sin => float(args, f64::sin),
             Cos => float(args, f64::cos),
             Tan => float(args, f64::tan),
+            Asin => float(args, f64::asin),
+            Acos => float(args, f64::acos),
+            Atan => float(args, f64::atan),
+            Sinh => float(args, f64::sinh),
+            Cosh => float(args, f64::cosh),
+            Tanh => float(args, f64::tanh),
             Factorial => args.into_iter().map(Value::factorial).collect(),
         }
     }
