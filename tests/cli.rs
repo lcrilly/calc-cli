@@ -99,6 +99,12 @@ fn factorial_continues_stdin() {
 }
 
 #[test]
+fn degrees_from_stdin() {
+    assert_eq!(ok(&["sin", "@°"], Some("30\n90\n")), "0.5\n1\n");
+    assert_eq!(ok(&["°"], Some("180\n")), "3.14159\n");
+}
+
+#[test]
 fn rows_are_preserved() {
     assert_eq!(ok(&["-r", "sum"], Some("1 2\n3 4\n")), "3\n7\n");
     assert_eq!(ok(&["--rows", "x10"], Some("1 2\n3 4\n")), "10 20\n30 40\n");

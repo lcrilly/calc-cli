@@ -36,6 +36,8 @@ pub enum Tok {
     Sup(i128),
     /// Postfix factorial: `5!`.
     Bang,
+    /// Postfix degrees, converting to radians: `30°`.
+    Degree,
     Sqrt,
     Pi,
     /// An opening bracket, holding the character that closes it.
@@ -53,7 +55,7 @@ impl Tok {
     }
 
     fn ends_operand(self) -> bool {
-        matches!(self, Tok::Num(_) | Tok::Pi | Tok::Close(_) | Tok::Stdin | Tok::Sup(_) | Tok::Bang)
+        matches!(self, Tok::Num(_) | Tok::Pi | Tok::Close(_) | Tok::Stdin | Tok::Sup(_) | Tok::Bang | Tok::Degree)
     }
 }
 
@@ -133,6 +135,8 @@ pub fn tokenize(input: &str, syntax: &Syntax) -> Result<Vec<Token>, Error> {
                 '%' => Tok::Mod,
                 '^' => Tok::Pow,
                 '!' => Tok::Bang,
+                // The degree sign, and the ordinal indicator that looks just like it (Option-0 on a Mac).
+                '°' | 'º' => Tok::Degree,
                 '²' => Tok::Sup(2),
                 '³' => Tok::Sup(3),
                 '√' => Tok::Sqrt,

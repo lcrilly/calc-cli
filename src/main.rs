@@ -28,7 +28,7 @@ Usage:
 
 Operators:  +  -  x * × · •  ÷ /  % mod  ^  ² ³  √  ∑  ∏  !
 Brackets:   {} or () or []
-Symbols:    π (pi)  @ (stdin)
+Symbols:    π (pi)  @ (stdin)  ° º (degrees to radians)
 Lists:      1 2 3  or  1,2,3
 Ranges:     1..10 or 1…10
 Functions:  sqrt √  sum ∑  product prod ∏  factorial fact !  ln  log  exp

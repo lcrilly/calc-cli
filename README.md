@@ -42,6 +42,7 @@ date +%s | calc +60x60x24  →  # Apply partial expressions to values from stdin
 | `…` `..` `...`       | ranges (stepping +1 or -1), e.g. `1…10`    |
 | `π` `pi`             | π (f64 precision)                          |
 | `@`                  | stdin, as a list                           |
+| `°` `º`              | convert degrees to radians                 |
 
 | Functions                     | Result                            |
 |-------------------------------|-----------------------------------|
@@ -66,6 +67,7 @@ date +%s | calc +60x60x24  →  # Apply partial expressions to values from stdin
 - `√` binds to the term right after it: `√4^2` is `(√4)^2`; write `√{4^2}` for the other reading.
 - Superscripts are atomic and work left to right: `2²³` = `(2²)³` = `64` .
 - `!` binds tightest of all, to the term just before it: `-3!` = -6, `2^3!` = 64, `√4!` = √24. Factorials are exact up to `33!`, and f64 up to `170!`.
+- `°` binds like `!` and converts degrees to radians: `sin 30°` = 0.5. Divide by `1°` to convert back: `asin{0.5}/1°` = 30. The ordinal `º` (Option-0 on a Mac) is equivalent.
 - Spaces are primarily for separating items in a list and can also be used to provide whitespace between operators. Take care with subtraction because `calc 1 -2` produces a list.
 - Commas also separate elements and trailing commas are inert: `sum(1,2,3,)`.
 - Operations are applied per element: `{1 2 3}x2` is 2 4 6, `2^{1 2 3}` is 2 4 8, `{1 2}+{10 20}` is 11 22. Lists between operators must be of the same length.

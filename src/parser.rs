@@ -7,9 +7,9 @@
 //!   expr    := term (('+' | '-') term)*
 //!   term    := unary (('×' | '÷' | '%') unary | unary)*   -- adjacency is implicit ×
 //!   unary   := ('+' | '-') unary | power
-//!   power   := root (SUP | '!')* ('^' unary)?             -- right-associative
+//!   power   := root (SUP | POSTFIX)* ('^' unary)?         -- right-associative
 //!   root    := '√' ('+' | '-')* root | primary
-//!   primary := atom '!'*                                  -- factorial binds tightest
+//!   primary := atom POSTFIX*                              -- POSTFIX is '!' or '°'; they bind tightest
 //!   atom    := number | 'π' | '@' | '(' list ')' | call
 //!   call    := FUNC '(' list ')' | FUNC list              -- without a bracket, takes the rest
 //!
@@ -63,7 +63,7 @@ impl Expression {
     /// True when the expression starts with an operator, so it continues a value read from stdin.
     /// A leading '-' is left out: `calc -2` is a negative number, and must not wait on stdin.
     pub fn is_continuation(&self) -> bool {
-        self.tokens.first().is_some_and(|t| matches!(t.tok, Tok::Plus | Tok::Mul | Tok::Div | Tok::Mod | Tok::Pow | Tok::Sup(_) | Tok::Bang))
+        self.tokens.first().is_some_and(|t| matches!(t.tok, Tok::Plus | Tok::Mul | Tok::Div | Tok::Mod | Tok::Pow | Tok::Sup(_) | Tok::Bang | Tok::Degree))
     }
 
     /// True when the expression ends with an operator or function, so stdin completes it.
@@ -262,11 +262,11 @@ impl<'a> Parser<'a> {
     fn power(&mut self) -> Result<Node, Error> {
         let mut base = self.root()?;
         // ² and ³ bind like ^2 and ^3: -2² is -4, √4² is (√4)², 2²³ is (2²)³.
-        // A factorial can follow them too: 2²! is (2²)!.
+        // A factorial or degree sign can follow them too: 2²! is (2²)!.
         while let Some(t) = self.token() {
             base = match t.tok {
                 Tok::Sup(n) => Node::binary(Op::Pow, base, Node::new(Expr::Num(Value::from_int(n)), t.span.clone())),
-                Tok::Bang => factorial(base, t),
+                Tok::Bang | Tok::Degree => postfix(base, t),
                 _ => break,
             };
             self.i += 1;
@@ -297,12 +297,12 @@ impl<'a> Parser<'a> {
         Ok(Node::new(Expr::Sqrt(Box::new(operand)), span))
     }
 
-    /// An atom and any factorials after it, so `√4!` is √(4!) and `-3!` is -(3!).
+    /// An atom and any `!` or `°` after it, so `√4!` is √(4!) and `-30°` is -(30°).
     fn primary(&mut self) -> Result<Node, Error> {
         let mut node = self.atom()?;
-        while let Some(t) = self.token().filter(|t| t.tok == Tok::Bang) {
+        while let Some(t) = self.token().filter(|t| matches!(t.tok, Tok::Bang | Tok::Degree)) {
             self.i += 1;
-            node = factorial(node, t);
+            node = postfix(node, t);
         }
         Ok(node)
     }
@@ -362,8 +362,15 @@ impl<'a> Parser<'a> {
     }
 }
 
-fn factorial(operand: Node, bang: &Token) -> Node {
-    let span = operand.span.start..bang.span.end;
+/// Applies a postfix `!` (factorial) or `°` (degrees to radians) to `operand`.
+fn postfix(operand: Node, op: &Token) -> Node {
+    let span = operand.span.start..op.span.end;
+    if op.tok == Tok::Degree {
+        let per_degree = Node::new(Expr::Num(Value::Approx(std::f64::consts::PI / 180.0)), op.span.clone());
+        let mut node = Node::binary(Op::Mul, operand, per_degree);
+        node.span = span;
+        return node;
+    }
     Node::new(Expr::Call(Func::Factorial, Box::new(operand)), span)
 }
 
@@ -517,6 +524,24 @@ mod tests {
         assert_eq!(eval("tanh 1"), "0.76159");
         same("sin asin 0.5", "0.5");
         assert_eq!(eval("2sinh{0}"), "0");
+    }
+
+    #[test]
+    fn degrees() {
+        assert_eq!(eval("sin 30°"), "0.5");
+        assert_eq!(eval("cos 60°"), "0.5");
+        assert_eq!(eval("tan 45°"), "1");
+        assert_eq!(eval("cos 90°"), "0");
+        assert_eq!(eval("sin {0 90 180}°"), "0 1 0");
+        assert_eq!(eval("sin{0° 90° 180°}"), "0 1 0");
+        same("sin{30}°", "{sin 30}x1°"); // after a call, ° converts the result
+        assert_eq!(eval("sin 30º"), "0.5"); // the ordinal indicator works too
+        same("180°", "π");
+        same("2x45°", "π/2");
+        same("-30°", "-{30°}");
+        same("√4°", "√{4°}");
+        same("asin{0.5}/1°", "30");
+        assert!(eval("°").starts_with("error"));
     }
 
     #[test]
