@@ -112,6 +112,11 @@ fn run(args: &[String]) -> io::Result<ExitCode> {
     if reads_stdin && stdin_is_terminal {
         return fail(&Error::usage("'@' reads from stdin, but nothing is piped in"), "");
     }
+    // A lone negative number continues stdin (`calc 2x5 | calc -1` is 9), but if stdin
+    // turns out to be empty it is just the number, so `calc $x` still works under cron.
+    let if_empty = (reads_stdin && expression.is_lone_negative())
+        .then(|| Expression::parse(&source, &syntax).and_then(Expression::compile).ok())
+        .flatten();
     if reads_stdin {
         expression.feed_stdin();
     }
@@ -121,7 +126,7 @@ fn run(args: &[String]) -> io::Result<ExitCode> {
         Err(e) => return fail(&e, &source),
     };
     if reads_stdin {
-        return input::run_stdin(&program, &syntax, &printer, options.rows);
+        return input::run_stdin(&program, if_empty.as_ref(), &syntax, &printer, options.rows);
     }
 
     match program.evaluate(None) {

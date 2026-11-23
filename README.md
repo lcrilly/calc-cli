@@ -95,10 +95,12 @@ date +%s | calc +60x60x24  →  # Apply partial expressions to values from stdin
 - When the whole list is needed (`sum`, `avg`, …) a bad line means no result at all, since a total that silently skipped a line would be wrong.
 - Values received from stdin can be combined with arguments to chain compound expressions.
   * Arguments that start with an operator (`+ x * ÷ / % ^ ² ³ ! mod`) continue the stdin list: `seq 3 | calc x2` .
+  * So does a lone negative number: `calc 2x5 | calc -1` gives `9`. If stdin is empty, it is just the number.
   * Arguments that end with an operator or function apply stdin as their last operand: `seq 3 | calc 2^` .
   * An unmatched closing bracket also wraps the stdin value: `seq 1 3 | calc +4}/2` gives `2.5`, `3`, `3.5`.
   * `@` explicitly positions stdin, as often as needed: `seq 1 20 | calc max@-min@` .
   * Complete arguments don't read stdin, so `calc 1+2` is safe inside a `while read` loop.
+    A lone negative number is the exception: in a loop, use `echo "$x" | calc` rather than `calc $x`.
 
 ## Output
 

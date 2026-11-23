@@ -61,9 +61,18 @@ impl Expression {
     }
 
     /// True when the expression starts with an operator, so it continues a value read from stdin.
-    /// A leading '-' is left out: `calc -2` is a negative number, and must not wait on stdin.
+    /// A leading '-' only counts on a lone number: `calc 2x5 | calc -1` is 9, but `-1x2` is
+    /// complete, so a negative number in a larger expression never waits on stdin.
     pub fn is_continuation(&self) -> bool {
-        self.tokens.first().is_some_and(|t| matches!(t.tok, Tok::Plus | Tok::Mul | Tok::Div | Tok::Mod | Tok::Pow | Tok::Sup(_) | Tok::Bang | Tok::Degree))
+        self.is_lone_negative()
+            || self.tokens.first().is_some_and(|t| {
+                matches!(t.tok, Tok::Plus | Tok::Mul | Tok::Div | Tok::Mod | Tok::Pow | Tok::Sup(_) | Tok::Bang | Tok::Degree)
+            })
+    }
+
+    /// True when the whole expression is one negative number: `-1` or `- 1`.
+    pub fn is_lone_negative(&self) -> bool {
+        matches!(self.tokens.as_slice(), [sign, number] if sign.tok == Tok::Minus && matches!(number.tok, Tok::Num(_)))
     }
 
     /// True when the expression ends with an operator or function, so stdin completes it.

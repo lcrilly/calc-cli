@@ -113,6 +113,19 @@ fn rows_are_preserved() {
 #[test]
 fn complete_arguments_leave_stdin_alone() {
     assert_eq!(ok(&["1+2"], Some("5\n")), "3\n");
+    assert_eq!(ok(&["-1x2"], Some("5\n")), "-2\n");
+    assert_eq!(ok(&["{-1}"], Some("5\n")), "-1\n");
+}
+
+#[test]
+fn lone_negative_number_continues_stdin() {
+    assert_eq!(ok(&["-1"], Some("10\n")), "9\n");
+    assert_eq!(ok(&["-", "1"], Some("10\n20\n")), "9\n19\n");
+    assert_eq!(ok(&["-p1", "-0.5"], Some("2\n")), "1.5\n");
+    // With nothing on stdin (cron, CI, < /dev/null) it is just the number.
+    assert_eq!(ok(&["-3"], Some("")), "-3\n");
+    assert_eq!(ok(&["-3"], None), "-3\n");
+    assert_eq!(ok(&["-1", "-2"], Some("10\n")), "-1\n-2\n");
 }
 
 #[test]

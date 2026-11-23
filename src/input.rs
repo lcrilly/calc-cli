@@ -121,14 +121,23 @@ impl Iterator for StdinLines {
 /// Evaluates the program with stdin. By default all of stdin is one list, but when the
 /// program only works element by element each line is evaluated as it arrives, which
 /// gives the same output while streaming. `--rows` evaluates every line on its own.
-pub fn run_stdin(program: &Program, syntax: &Syntax, printer: &Printer, rows: bool) -> io::Result<ExitCode> {
+/// `if_empty` is evaluated instead when stdin has no lines at all.
+pub fn run_stdin(
+    program: &Program,
+    if_empty: Option<&Program>,
+    syntax: &Syntax,
+    printer: &Printer,
+    rows: bool,
+) -> io::Result<ExitCode> {
     let mut out = BufWriter::new(io::stdout().lock());
     let mut errors = Reporter::default();
 
     if rows || program.streams() {
         let mut lines = StdinLines::new();
+        let mut empty = true;
         while let Some(line) = lines.next() {
             let line = line?;
+            empty = false;
             match line.values(syntax).map(|values| program.evaluate(Some(&values))) {
                 Err(e) => errors.report(&mut out, Some(line.n), &e, line.source())?,
                 Ok(Err(e)) => errors.report(&mut out, Some(line.n), &e, program.source())?,
@@ -139,6 +148,12 @@ pub fn run_stdin(program: &Program, syntax: &Syntax, printer: &Printer, rows: bo
             // result at once while a large file is still written in big batches.
             if !lines.has_buffered() {
                 out.flush()?;
+            }
+        }
+        if empty && let Some(standalone) = if_empty {
+            match standalone.evaluate(None) {
+                Ok(result) => printer.write_lines(&mut out, &result)?,
+                Err(e) => errors.report(&mut out, None, &e, standalone.source())?,
             }
         }
         out.flush()?;
