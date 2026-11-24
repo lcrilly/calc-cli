@@ -108,7 +108,7 @@ impl Func {
         let one = |v: Value| Ok(vec![v]);
         match self {
             Sum => one(sum(&args)?),
-            Product => one(args.iter().try_fold(Value::from_int(1), |acc, &v| acc.mul(v))?),
+            Product => one(args.into_iter().try_fold(Value::from_int(1), Value::mul)?),
             Mean => one(mean(&args)?),
             Median => {
                 let sorted = sorted(args);
@@ -117,66 +117,67 @@ impl Func {
                     return Err(Error::new("median of an empty list"));
                 }
                 if n % 2 == 1 {
-                    one(sorted[n / 2])
+                    one(sorted[n / 2].clone())
                 } else {
-                    one(sorted[n / 2 - 1].add(sorted[n / 2])?.div(Value::from_int(2))?)
+                    one(sorted[n / 2 - 1].clone().add(sorted[n / 2].clone())?.div(Value::from_int(2))?)
                 }
             }
             Mode => {
                 let sorted = sorted(args);
                 // Runs of equal values, in ascending order; keep every run of the greatest length.
-                let runs: Vec<&[Value]> = sorted.chunk_by(|a, b| a.total_cmp(*b).is_eq()).collect();
+                let runs: Vec<&[Value]> = sorted.chunk_by(|a, b| a.total_cmp(b).is_eq()).collect();
                 let most = runs.iter().map(|run| run.len()).max().ok_or_else(|| Error::new("mode of an empty list"))?;
-                Ok(runs.into_iter().filter(|run| run.len() == most).map(|run| run[0]).collect())
+                Ok(runs.into_iter().filter(|run| run.len() == most).map(|run| run[0].clone()).collect())
             }
-            Min => one(args.into_iter().min_by(|a, b| a.total_cmp(*b)).ok_or_else(|| Error::new("min of an empty list"))?),
-            Max => one(args.into_iter().max_by(|a, b| a.total_cmp(*b)).ok_or_else(|| Error::new("max of an empty list"))?),
+            Min => one(args.into_iter().min_by(Value::total_cmp).ok_or_else(|| Error::new("min of an empty list"))?),
+            Max => one(args.into_iter().max_by(Value::total_cmp).ok_or_else(|| Error::new("max of an empty list"))?),
             Stdev => {
                 // Sample standard deviation (n − 1), as spreadsheets' STDEV.
                 if args.len() < 2 {
                     return Err(Error::new("stdev needs at least two numbers"));
                 }
                 let m = mean(&args)?;
-                let squares = args.iter().map(|&v| v.sub(m)?.pow(Value::from_int(2))).collect::<Result<Vec<_>, _>>()?;
-                one(sum(&squares)?.div(Value::from_int(args.len() as i128 - 1))?.sqrt()?)
+                let n = args.len() as i64;
+                let squares = args.into_iter().map(|v| v.sub(m.clone())?.pow(Value::from_int(2))).collect::<Result<Vec<_>, _>>()?;
+                one(sum(&squares)?.div(Value::from_int(n - 1))?.sqrt()?)
             }
             Abs => Ok(args.into_iter().map(Value::abs).collect()),
             Floor => Ok(args.into_iter().map(Value::floor).collect()),
             Ceil => Ok(args.into_iter().map(Value::ceil).collect()),
             Round => Ok(args.into_iter().map(Value::round).collect()),
-            Ln => float(args, f64::ln),
-            Log => float(args, f64::log10),
-            Exp => float(args, f64::exp),
-            Sin => float(args, f64::sin),
-            Cos => float(args, f64::cos),
-            Tan => float(args, f64::tan),
-            Asin => float(args, f64::asin),
-            Acos => float(args, f64::acos),
-            Atan => float(args, f64::atan),
-            Sinh => float(args, f64::sinh),
-            Cosh => float(args, f64::cosh),
-            Tanh => float(args, f64::tanh),
+            Ln => each(args, Value::ln),
+            Log => each(args, Value::log10),
+            Exp => each(args, Value::exp),
+            Sin => each(args, Value::sin),
+            Cos => each(args, Value::cos),
+            Tan => each(args, Value::tan),
+            Asin => each(args, Value::asin),
+            Acos => each(args, Value::acos),
+            Atan => each(args, Value::atan),
+            Sinh => each(args, Value::sinh),
+            Cosh => each(args, Value::cosh),
+            Tanh => each(args, Value::tanh),
             Factorial => args.into_iter().map(Value::factorial).collect(),
         }
     }
 }
 
 fn sum(args: &[Value]) -> Result<Value, Error> {
-    args.iter().try_fold(Value::from_int(0), |acc, &v| acc.add(v))
+    args.iter().try_fold(Value::from_int(0), |acc, v| acc.add(v.clone()))
 }
 
 fn mean(args: &[Value]) -> Result<Value, Error> {
     if args.is_empty() {
         return Err(Error::new("mean of an empty list"));
     }
-    sum(args)?.div(Value::from_int(args.len() as i128))
+    sum(args)?.div(Value::from_int(args.len() as i64))
 }
 
 fn sorted(mut args: Vec<Value>) -> Vec<Value> {
-    args.sort_by(|a, b| a.total_cmp(*b));
+    args.sort_by(Value::total_cmp);
     args
 }
 
-fn float(args: Vec<Value>, f: fn(f64) -> f64) -> Result<Vec<Value>, Error> {
-    args.into_iter().map(|v| crate::value::approx(f(v.to_f64()))).collect()
+fn each(args: Vec<Value>, f: fn(Value) -> Result<Value, Error>) -> Result<Vec<Value>, Error> {
+    args.into_iter().map(f).collect()
 }

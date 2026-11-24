@@ -6,7 +6,7 @@
 use crate::error::{Error, Span};
 use crate::functions::{self, Func};
 use crate::locale::NumberFormat;
-use crate::value::{Ratio, Value};
+use crate::value::Value;
 
 /// How numbers in the input are written.
 #[derive(Clone, Copy)]
@@ -23,7 +23,7 @@ impl Default for Syntax {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Tok {
     Num(Value),
     Plus,
@@ -33,7 +33,7 @@ pub enum Tok {
     Mod,
     Pow,
     /// A superscript power: ² or ³.
-    Sup(i128),
+    Sup(i64),
     /// Postfix factorial: `5!`.
     Bang,
     /// Postfix degrees, converting to radians: `30°`.
@@ -50,11 +50,11 @@ pub enum Tok {
 }
 
 impl Tok {
-    pub fn starts_operand(self) -> bool {
+    pub fn starts_operand(&self) -> bool {
         matches!(self, Tok::Num(_) | Tok::Pi | Tok::Open(_) | Tok::Sqrt | Tok::Func(_) | Tok::Stdin)
     }
 
-    fn ends_operand(self) -> bool {
+    fn ends_operand(&self) -> bool {
         matches!(self, Tok::Num(_) | Tok::Pi | Tok::Close(_) | Tok::Stdin | Tok::Sup(_) | Tok::Bang | Tok::Degree)
     }
 }
@@ -83,7 +83,7 @@ fn word_at(chars: &[char]) -> Option<(Tok, usize)> {
     const WORDS: &[(&str, Tok)] = &[("sqrt", Tok::Sqrt), ("mod", Tok::Mod), ("pi", Tok::Pi)];
     let word: String = chars.iter().take_while(|c| c.is_alphabetic()).map(|c| c.to_ascii_lowercase()).collect();
     let func = Func::prefix_of(&word).map(|(f, len)| (Tok::Func(f), len));
-    let other = WORDS.iter().find(|(w, _)| word.starts_with(w)).map(|&(w, tok)| (tok, w.len()));
+    let other = WORDS.iter().find(|(w, _)| word.starts_with(w)).map(|(w, tok)| (tok.clone(), w.len()));
     func.into_iter().chain(other).max_by_key(|&(_, len)| len)
 }
 
@@ -189,7 +189,7 @@ fn scan_number(chars: &[char], start: usize, syntax: &Syntax) -> Result<(Value, 
         }
         j += 1;
     }
-    let value = parse_number(&plain).ok_or_else(|| {
+    let value = Value::parse(&plain).ok_or_else(|| {
         let literal: String = chars[start..j].iter().collect();
         Error::new(format!("invalid number '{literal}'")).at(start..j)
     })?;
@@ -240,7 +240,7 @@ fn insert_separators(tokens: &mut Vec<Token>, chars: &[char]) -> Result<(), Erro
             continue;
         }
         // "1 000" was digit grouping before spaces made lists; don't let it quietly become 1, 0.
-        if let (Tok::Num(_), Tok::Num(_)) = (prev.tok, token.tok) {
+        if let (Tok::Num(_), Tok::Num(_)) = (&prev.tok, &token.tok) {
             let (left, right) = (text(prev), text(token));
             if right.len() == 3 && right.starts_with('0') && right.chars().all(|c| c.is_ascii_digit()) {
                 return Err(Error::new(format!(
@@ -257,21 +257,4 @@ fn insert_separators(tokens: &mut Vec<Token>, chars: &[char]) -> Result<(), Erro
         tokens.insert(i, Token { tok: Tok::Sep, span: start - 1..start, space_before: true });
     }
     Ok(())
-}
-
-/// Parses a plain decimal literal exactly; falls back to f64 if it doesn't fit in i128.
-fn parse_number(literal: &str) -> Option<Value> {
-    let (int_part, frac_part) = literal.split_once('.').unwrap_or((literal, ""));
-    if frac_part.contains('.') || (int_part.is_empty() && frac_part.is_empty()) {
-        return None;
-    }
-    let exact = || {
-        let digits: i128 = format!("{int_part}{frac_part}").parse().ok()?;
-        let scale = 10i128.checked_pow(u32::try_from(frac_part.len()).ok()?)?;
-        Ratio::new(digits, scale)
-    };
-    match exact() {
-        Some(r) => Some(Value::Exact(r)),
-        None => literal.parse().ok().map(Value::Approx),
-    }
 }

@@ -48,7 +48,13 @@ fn readme_examples_still_hold() {
     assert_eq!(ok(&["2x{3+4}"], None), "14\n");
     assert_eq!(ok(&["2", "x", "{3", "+", "4}"], None), "14\n");
     assert_eq!(ok(&["-p=10", "√2"], None), "1.4142135624\n");
-    assert_eq!(ok(&["--precision=max"], Some("2π\n")), "6.283185307179586\n");
+    let two_pi = ok(&["--precision=max"], Some("2π\n"));
+    if cfg!(feature = "precise") {
+        assert!(two_pi.starts_with("6.28318530717958647692528676655900576839433879875021164194988918461563281257"));
+        assert_eq!(two_pi.trim().len(), 101); // 100 significant digits
+    } else {
+        assert_eq!(two_pi, "6.283185307179586\n");
+    }
     assert_eq!(ok(&["2^"], Some("1\n2\n3\n")), "2\n4\n8\n");
     assert_eq!(ok(&["+4}/2"], Some("1\n2\n3\n")), "2.5\n3\n3.5\n");
     assert_eq!(ok(&["^2"], Some("-2\n")), "4\n");

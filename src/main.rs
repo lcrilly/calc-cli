@@ -6,6 +6,7 @@ mod functions;
 mod input;
 mod lexer;
 mod locale;
+mod num;
 mod parser;
 mod value;
 
@@ -47,7 +48,8 @@ take it as their last operand. @ explicitly references stdin: 'calc max@-min@' .
 Options:
   -h, --help                     Show this help
   -p, --precision=N|max          Decimal places for non-terminating results
-                                 (default 5; max = full f64 precision)
+                                 (default 5; max = full f64 precision, or 100
+                                 digits in a precise build)
   --pretty[=always|auto|SAMPLE]  Read and write numbers in the local style,
                                  including digit grouping. always is the default,
                                  auto only applies to terminal output, SAMPLE
@@ -73,7 +75,10 @@ fn fail(error: &Error, source: &str) -> io::Result<ExitCode> {
 fn run(args: &[String]) -> io::Result<ExitCode> {
     let (options, rest) = match cli::parse_options(args) {
         Ok(Command::Help) => return print(USAGE),
-        Ok(Command::Version) => return print(&format!("calc {}", env!("CARGO_PKG_VERSION"))),
+        Ok(Command::Version) => {
+            let build = if cfg!(feature = "precise") { " (precise)" } else { "" };
+            return print(&format!("calc {}{build}", env!("CARGO_PKG_VERSION")));
+        }
         Ok(Command::Run(options, rest)) => (options, rest),
         Err(e) => return fail(&e, ""),
     };
@@ -92,6 +97,8 @@ fn run(args: &[String]) -> io::Result<ExitCode> {
     let number_format = options.pretty.and_then(|p| p.format).unwrap_or_else(locale::detected);
     let syntax = Syntax { local_decimal: number_format.decimal, pretty: read_pretty.then_some(number_format) };
     let printer = Printer { precision: options.precision, pretty: write_pretty.then_some(number_format) };
+
+    num::set_precision(options.precision);
 
     let stdin_is_terminal = io::stdin().is_terminal();
     if rest.is_empty() && stdin_is_terminal {

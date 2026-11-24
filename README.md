@@ -104,20 +104,18 @@ date +%s | calc +60x60x24  →  # Apply partial expressions to values from stdin
 
 ## Output
 
-Arithmetic is exact (i128 rationals) until a result is irrational or overflows, then it falls back to f64.
-
 - Integers stay integers: `7/7` → `1`.
 - Terminating decimals print in full: `1/64` → `0.015625`.
-- Recurring and irrational results print up to 5 places (trailing zeros trimmed).
-- f64 results of 1e16 or more print in scientific notation, since their low digits aren't real.
+- Recurring and irrational results print up to 5 places (trailing zeros trimmed) unless overridden with `--precision`.
+- The scope for large numbers and depth of precision is dependent on the install option (see [Build & install](#build--install)).
 
 ## Command line options
 
-| Option syntax                     | |
-|-----------------------------------|-|
-| `-p` `--precision=N\|max`         | Set precision (decimal places) for output (default: `5`) |
-| `--pretty[=always\|auto\|SAMPLE]` | Read and write numbers using the locale's style for digit grouping and decimals. |
-| `-r` `--rows`                     | Preserve rows of input instead of merging into a single list |
+| Option syntax                      | |
+|------------------------------------|-|
+| `-pN` `--precision=N\|max`         | Number of decimal places for non-integer results (default: 5). `max` depends on build. |
+| `--pretty[=always\|auto\|SAMPLE]`  | Read and write numbers using the locale's style for digit grouping and decimals. |
+| `-r` `--rows`                      | Preserve rows of input instead of merging into a single list |
 
 Command line options must be specified first, before the expression, to avoid being mistaken for a negative number. `--` explicitly ends the options.
 
@@ -150,4 +148,24 @@ $ calc --pretty=0,00,000.0 ∑1…1234}/2        # Provide sample style
 ```
 cargo build --release      # → target/release/calc
 cargo install --path .     # → ~/.cargo/bin/calc
+```
+
+By default there are no dependencies but that brings some limitations for very
+large numbers and arbitrary precision:
+
+- Arithmetic is exact (i128 rationals) until a result is irrational or overflows, then it falls back to f64.
+- f64 results of 1e16 or more print in scientific notation, since their low digits aren't real.
+- `--precision=max` is constrained to f64 (approximately 16 significant digits).
+
+When built with `--features precise`, `calc` uses the [dashu](https://github.com/cmpute/dashu) crates for big numbers and deeper precision:
+
+- Exact results can be up to about 300,000 digits: `2^200`, `100!` and `99999999999999999999^2` print every digit.
+- Irrational results are computed to the requested precision rather than f64: `calc -p=50 √2` gives 50 correct places, and `-p=max` gives 100 significant digits.
+- Large values keep their digits instead of switching to scientific notation (`10^30π` → `3141592653589793238462643383279.50288`), and numbers far beyond f64's range still work: `exp 1000` → `1.97007e434`.
+
+When built with the necessary dependencies, `calc -V` will include "(precise)".
+
+```
+cargo build --release --features precise      # → target/release/calc
+cargo install --path . --features precise     # → ~/.cargo/bin/calc
 ```

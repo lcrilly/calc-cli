@@ -17,7 +17,7 @@ pub struct Printer {
 }
 
 impl Printer {
-    fn format(&self, value: Value) -> String {
+    fn format(&self, value: &Value) -> String {
         let decimal = format::format(value, self.precision);
         match self.pretty {
             Some(f) => f.apply(&decimal),
@@ -26,14 +26,14 @@ impl Printer {
     }
 
     pub fn write_lines(&self, out: &mut impl Write, values: &[Value]) -> io::Result<()> {
-        for &v in values {
+        for v in values {
             writeln!(out, "{}", self.format(v))?;
         }
         Ok(())
     }
 
     fn write_row(&self, out: &mut impl Write, values: &[Value]) -> io::Result<()> {
-        let row: Vec<String> = values.iter().map(|&v| self.format(v)).collect();
+        let row: Vec<String> = values.iter().map(|v| self.format(v)).collect();
         writeln!(out, "{}", row.join(" "))
     }
 }

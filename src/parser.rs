@@ -165,8 +165,8 @@ impl<'a> Parser<'a> {
         self.tokens.get(self.i)
     }
 
-    fn peek(&self) -> Option<Tok> {
-        self.token().map(|t| t.tok)
+    fn peek(&self) -> Option<&'a Tok> {
+        self.token().map(|t| &t.tok)
     }
 
     /// Where the next token starts, or the end of the input.
@@ -195,7 +195,7 @@ impl<'a> Parser<'a> {
         if !self.at_list_end() {
             loop {
                 items.push(self.element()?);
-                if self.peek() != Some(Tok::Sep) {
+                if self.peek() != Some(&Tok::Sep) {
                     break;
                 }
                 self.i += 1;
@@ -213,7 +213,7 @@ impl<'a> Parser<'a> {
 
     fn element(&mut self) -> Result<Node, Error> {
         let from = self.expr()?;
-        if self.peek() != Some(Tok::Range) {
+        if self.peek() != Some(&Tok::Range) {
             return Ok(from);
         }
         self.i += 1;
@@ -224,8 +224,8 @@ impl<'a> Parser<'a> {
         let mut node = self.term()?;
         loop {
             let op = match self.peek() {
-                Some(Tok::Plus) => Op::Add,
-                Some(Tok::Minus) => Op::Sub,
+                Some(&Tok::Plus) => Op::Add,
+                Some(&Tok::Minus) => Op::Sub,
                 _ => return Ok(node),
             };
             self.i += 1;
@@ -237,9 +237,9 @@ impl<'a> Parser<'a> {
         let mut node = self.unary()?;
         loop {
             let op = match self.peek() {
-                Some(Tok::Mul) => Op::Mul,
-                Some(Tok::Div) => Op::Div,
-                Some(Tok::Mod) => Op::Rem,
+                Some(&Tok::Mul) => Op::Mul,
+                Some(&Tok::Div) => Op::Div,
+                Some(&Tok::Mod) => Op::Rem,
                 // Implicit multiplication: 2π, 3√2, 2{1+1}, {1+1}{2+2}, 2sum{1 2}
                 Some(tok) if tok.starts_operand() => {
                     node = Node::binary(Op::Mul, node, self.unary()?);
@@ -280,7 +280,7 @@ impl<'a> Parser<'a> {
             };
             self.i += 1;
         }
-        if self.peek() == Some(Tok::Pow) {
+        if self.peek() == Some(&Tok::Pow) {
             self.i += 1;
             return Ok(Node::binary(Op::Pow, base, self.unary()?));
         }
@@ -294,7 +294,7 @@ impl<'a> Parser<'a> {
         self.i += 1;
         let mut negate = false;
         while let Some(sign @ (Tok::Plus | Tok::Minus)) = self.peek() {
-            negate ^= sign == Tok::Minus;
+            negate ^= *sign == Tok::Minus;
             self.i += 1;
         }
         let mut operand = self.root()?;
@@ -323,16 +323,16 @@ impl<'a> Parser<'a> {
         };
         self.i += 1;
         let span = t.span.clone();
-        match t.tok {
-            Tok::Num(value) => Ok(Node::new(Expr::Num(value), span)),
-            Tok::Pi => Ok(Node::new(Expr::Num(Value::Approx(std::f64::consts::PI)), span)),
+        match &t.tok {
+            Tok::Num(value) => Ok(Node::new(Expr::Num(value.clone()), span)),
+            Tok::Pi => Ok(Node::new(Expr::Num(Value::pi()), span)),
             Tok::Stdin => Ok(Node::new(Expr::Stdin, span)),
             Tok::Open(close) => {
                 // Empty brackets are only meaningful as a function's list: sum{}.
                 if let Some(next) = self.token().filter(|n| matches!(n.tok, Tok::Close(_))) {
                     return Err(self.unexpected(next));
                 }
-                self.bracketed(t, close)
+                self.bracketed(t, *close)
             }
             Tok::Func(f) => {
                 let args = match self.token() {
@@ -346,7 +346,7 @@ impl<'a> Parser<'a> {
                     _ => self.list()?,
                 };
                 let span = span.start..args.span.end;
-                Ok(Node::new(Expr::Call(f, Box::new(args)), span))
+                Ok(Node::new(Expr::Call(*f, Box::new(args)), span))
             }
             _ => Err(self.unexpected(t)),
         }
@@ -375,7 +375,7 @@ impl<'a> Parser<'a> {
 fn postfix(operand: Node, op: &Token) -> Node {
     let span = operand.span.start..op.span.end;
     if op.tok == Tok::Degree {
-        let per_degree = Node::new(Expr::Num(Value::Approx(std::f64::consts::PI / 180.0)), op.span.clone());
+        let per_degree = Node::new(Expr::Num(Value::degree()), op.span.clone());
         let mut node = Node::binary(Op::Mul, operand, per_degree);
         node.span = span;
         return node;
@@ -391,7 +391,7 @@ mod tests {
 
     fn eval_with(input: &str, syntax: &Syntax) -> String {
         match evaluate(input, syntax) {
-            Ok(values) => values.iter().map(|&v| format(v, Precision::Default).to_string()).collect::<Vec<_>>().join(" "),
+            Ok(values) => values.iter().map(|v| format(v, Precision::Default).to_string()).collect::<Vec<_>>().join(" "),
             Err(e) => format!("error: {e}"),
         }
     }
@@ -598,9 +598,15 @@ mod tests {
         assert_eq!(eval("factorial(5)"), "120");
         assert_eq!(eval("FACT{5}x2"), "240");
         assert_eq!(eval("33!"), "8683317618811886495518194401280000000");
-        assert_eq!(eval("34!"), "2.95233e38");
-        assert_eq!(eval("170!"), "7.25742e306");
-        assert_eq!(eval("171!"), "error: result out of range");
+        if cfg!(feature = "precise") {
+            assert_eq!(eval("34!"), "295232799039604140847618609643520000000");
+            assert_eq!(eval("171!").len(), 310);
+            assert_eq!(eval("100001!"), "error: result out of range");
+        } else {
+            assert_eq!(eval("34!"), "2.95233e38");
+            assert_eq!(eval("170!"), "7.25742e306");
+            assert_eq!(eval("171!"), "error: result out of range");
+        }
         assert!(eval("2.5!").contains("whole number"));
         assert!(eval("{-1}!").contains("whole number"));
         assert!(eval("π!").contains("whole number"));

@@ -89,7 +89,7 @@ impl Node {
 
     fn eval_here(&self, stdin: Option<&[Value]>) -> Result<Vec<Value>, Error> {
         match &self.expr {
-            Expr::Num(v) => Ok(vec![*v]),
+            Expr::Num(v) => Ok(vec![v.clone()]),
             Expr::Stdin => stdin.map(<[Value]>::to_vec).ok_or_else(|| Error::new("'@' needs input on stdin")),
             Expr::Neg(a) => Ok(a.eval(stdin)?.into_iter().map(Value::neg).collect()),
             Expr::Sqrt(a) => a.eval(stdin)?.into_iter().map(Value::sqrt).collect(),
@@ -111,8 +111,8 @@ impl Node {
 fn zip(a: Vec<Value>, b: Vec<Value>, f: fn(Value, Value) -> Result<Value, Error>) -> Result<Vec<Value>, Error> {
     match (a.len(), b.len()) {
         (m, n) if m == n => a.into_iter().zip(b).map(|(x, y)| f(x, y)).collect(),
-        (1, _) => b.into_iter().map(|y| f(a[0], y)).collect(),
-        (_, 1) => a.into_iter().map(|x| f(x, b[0])).collect(),
+        (1, _) => b.into_iter().map(|y| f(a[0].clone(), y)).collect(),
+        (_, 1) => a.into_iter().map(|x| f(x, b[0].clone())).collect(),
         (m, n) => Err(Error::new(format!("can't combine lists of {m} and {n} numbers"))),
     }
 }
@@ -124,17 +124,16 @@ fn range(from: Vec<Value>, to: Vec<Value>) -> Result<Vec<Value>, Error> {
     let ([from], [to]) = (from.as_slice(), to.as_slice()) else {
         return Err(Error::new("a range needs a single number at each end"));
     };
-    let (from, to) = (*from, *to);
     let ascending = from.total_cmp(to).is_le();
     let step = Value::from_int(if ascending { 1 } else { -1 });
     let mut out = Vec::new();
-    let mut v = from;
+    let mut v = from.clone();
     while if ascending { v.total_cmp(to).is_le() } else { v.total_cmp(to).is_ge() } {
         if out.len() == MAX_RANGE {
             return Err(Error::new(format!("range is longer than {MAX_RANGE} numbers")));
         }
-        out.push(v);
-        v = v.add(step)?;
+        out.push(v.clone());
+        v = v.add(step.clone())?;
     }
     Ok(out)
 }

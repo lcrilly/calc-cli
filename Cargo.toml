@@ -1,12 +1,20 @@
 [package]
 name = "calc"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "Evaluate arithmetic expressions and lists of numbers without shell quoting"
 license = "MIT"
 repository = "https://github.com/lcrilly/calc-cli"
 
+[features]
+default = []
+# Big numbers and arbitrary precision, from the dashu crates.
+precise = ["dep:dashu-int", "dep:dashu-ratio", "dep:dashu-float"]
+
 [dependencies]
+dashu-int = { version = "0.6.2", optional = true }
+dashu-ratio = { version = "0.6.1", optional = true }
+dashu-float = { version = "0.6.2", optional = true }
 
 [profile.release]
 opt-level = 3
