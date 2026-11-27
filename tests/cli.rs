@@ -23,7 +23,12 @@ fn calc_env(args: &[&str], stdin: Option<&str>, env: &[(&str, &str)]) -> Output 
         .stderr(Stdio::piped());
     let mut child = command.spawn().unwrap();
     if let Some(input) = stdin {
-        child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+        // calcx may exit without reading stdin (that's what some tests check), and
+        // a write after it has gone fails with a broken pipe; that isn't an error.
+        match child.stdin.take().unwrap().write_all(input.as_bytes()) {
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {}
+            result => result.unwrap(),
+        }
     }
     let out = child.wait_with_output().unwrap();
     Output {

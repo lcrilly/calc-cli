@@ -126,10 +126,19 @@ pub fn detected() -> NumberFormat {
         {
             return format;
         }
-        posix_format()
-            .or_else(|| locale_name().and_then(|name| named_format(&name)))
-            .unwrap_or(NumberFormat::PLAIN)
+        resolve(posix_format(), locale_name().as_deref())
     })
+}
+
+/// Chooses between what the C library reports and what the locale's name suggests.
+/// The C library wins when it gives a real style. When it gives none, or only the
+/// plain C style, the name decides: inside a snap the C library has no data for
+/// most locales, and may report the C locale rather than failing.
+fn resolve(posix: Option<NumberFormat>, name: Option<&str>) -> NumberFormat {
+    match posix {
+        Some(format) if format != NumberFormat::PLAIN => format,
+        _ => name.and_then(named_format).unwrap_or(NumberFormat::PLAIN),
+    }
 }
 
 /// The locale that applies to numbers: the first of `LC_ALL`, `LC_NUMERIC` and
@@ -305,6 +314,22 @@ mod tests {
         assert_eq!(named("C.UTF-8"), None);
         assert_eq!(named("POSIX"), None);
         assert_eq!(named("xx_YY"), None);
+    }
+
+    #[test]
+    fn library_or_name() {
+        let de = fmt("1.234,5");
+        let gb = fmt("1,234.5");
+        // Real locale data wins.
+        assert_eq!(resolve(Some(de), Some("en_GB.UTF-8")), de);
+        // No data (setlocale failed): the name decides.
+        assert_eq!(resolve(None, Some("en_GB.UTF-8")), gb);
+        // The C style reported for a named locale, as inside a snap: the name decides.
+        assert_eq!(resolve(Some(NumberFormat::PLAIN), Some("en_GB.UTF-8")), gb);
+        // Genuinely C, or a name we don't know: plain.
+        assert_eq!(resolve(Some(NumberFormat::PLAIN), Some("C.UTF-8")), NumberFormat::PLAIN);
+        assert_eq!(resolve(Some(NumberFormat::PLAIN), Some("xx_YY.UTF-8")), NumberFormat::PLAIN);
+        assert_eq!(resolve(None, None), NumberFormat::PLAIN);
     }
 
     #[test]

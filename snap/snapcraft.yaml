@@ -1,4 +1,5 @@
 name: calcx
+title: calcx
 base: core24
 version: '0.3.0'
 summary: Arithmetic on the command line and on lists of numbers, without quoting
@@ -19,6 +20,7 @@ license: MIT
 website: https://github.com/lcrilly/calcx
 source-code: https://github.com/lcrilly/calcx
 issues: https://github.com/lcrilly/calcx/issues
+contact: https://github.com/lcrilly/calcx/issues
 grade: stable
 # calcx only reads arguments and stdin and writes stdout, so it needs no interfaces.
 confinement: strict
