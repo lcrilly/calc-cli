@@ -184,6 +184,34 @@ fn shell_brace_expansion_is_caught() {
 }
 
 #[test]
+fn help_uses_the_name_it_was_run_as() {
+    let help = ok(&["--help"], None);
+    assert!(help.contains("Usage: calc [OPTIONS]"));
+    assert!(!help.contains('\x1b'), "piped help has no styling");
+    let max = if cfg!(feature = "precise") { "max = 100 significant digits" } else { "max = full f64 precision" };
+    assert!(help.contains(max), "{help}");
+    // Every example's comment starts in the same column.
+    let columns: Vec<usize> =
+        help.lines().filter_map(|l| l.find(" # ").map(|i| l[..i].chars().count())).collect();
+    assert!(columns.len() >= 5 && columns.windows(2).all(|w| w[0] == w[1]), "{columns:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_changes_the_name() {
+    let dir = std::env::temp_dir().join(format!("calc-test-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let link = dir.join("sum-it");
+    let _ = std::fs::remove_file(&link);
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_calc"), &link).unwrap();
+    let out = Command::new(&link).arg("2x{3").env("LC_ALL", "C").output().unwrap();
+    let help = Command::new(&link).arg("--help").output().unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(String::from_utf8(out.stderr).unwrap().starts_with("sum-it: missing '}'"));
+    assert!(String::from_utf8(help.stdout).unwrap().contains("Usage: sum-it [OPTIONS]"));
+}
+
+#[test]
 fn options() {
     assert_eq!(calc(&["--bogus", "1"], None).code, 2);
     assert_eq!(calc(&["--pretty=nonsense", "1"], None).code, 2);

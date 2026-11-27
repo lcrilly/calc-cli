@@ -49,8 +49,8 @@ impl Reporter {
         self.failed = true;
         out.flush()?;
         match line {
-            Some(n) => eprintln!("calc: line {n}: {}", error.in_source(source)),
-            None => eprintln!("calc: {}", error.in_source(source)),
+            Some(n) => eprintln!("{}: line {n}: {}", crate::cli::program_name(), error.in_source(source)),
+            None => eprintln!("{}: {}", crate::cli::program_name(), error.in_source(source)),
         }
         Ok(())
     }

@@ -1,10 +1,26 @@
 //! Command line options. Options come first and end at the first argument that
 //! isn't one, or at `--`, so `calc -2` and `calc -pi` are expressions.
 
+use std::path::Path;
+use std::sync::OnceLock;
+
 use crate::error::Error;
 use crate::format::Precision;
 use crate::functions::Func;
 use crate::locale::NumberFormat;
+
+/// The name the program was run as (the file name of argv[0]), so help and errors
+/// match a renamed binary, a symlink or a snap. Falls back to the package name.
+pub fn program_name() -> &'static str {
+    static NAME: OnceLock<String> = OnceLock::new();
+    NAME.get_or_init(|| {
+        std::env::args_os()
+            .next()
+            .and_then(|arg0| Path::new(&arg0).file_name().map(|f| f.to_string_lossy().into_owned()))
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| env!("CARGO_PKG_NAME").to_string())
+    })
+}
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum When {

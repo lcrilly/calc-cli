@@ -19,47 +19,127 @@ use input::Printer;
 use lexer::Syntax;
 use parser::Expression;
 
+/// The help text. `{name}` becomes the name the program was run as, and `{max}`
+/// what `--precision=max` means in this build.
 const USAGE: &str = "\
-calc - evaluate arithmetic expressions on the command line
-       operate on (lists of) numbers from stdin
+Evaluate arithmetic expressions on the command line or from stdin (without quoting)
 
-Usage:
-  calc [OPTIONS] EXPRESSION...
-  ... | calc [OPTIONS] [PARTIAL EXPRESSION...]
+Usage: {name} [OPTIONS] [EXPRESSION | PARTIAL EXPRESSION]
 
-Operators:  +  -  x * × · •  ÷ /  % mod  ^  ² ³  √  ∑  ∏  !
-Brackets:   {} or () or []
-Symbols:    π (pi)  @ (stdin)  ° º (degrees to radians)
-Lists:      1 2 3  or  1,2,3
-Ranges:     1..10 or 1…10
-Functions:  sqrt √  sum ∑  product prod ∏  factorial fact !  ln  log  exp
-            avg mean average x̄  median  mode  min  max  stdev  abs  round
-            floor  ceil  sin  cos  tan  asin  acos  atan  sinh  cosh  tanh
+Expressions:
+  Construct expressions with conventional infix operators, scientific symbols
+  and common spreadsheet functions. Multiple options are provided to enable
+  the use of shell-safe characters without the need for quoting or escaping.
 
-Arithmetic applies element by element: {1 2 3}x2 is 2 4 6. Lists print one
-number per line. Adjacent terms multiply: 2π, 3√2, 2{1+1}. Group digits with _
-(1_000). An unmatched closing bracket encapsulates prior numbers: 3+4+5}/2 → 6.
+  Operators:  +   -   x * × · •   ÷ /   mod %   ^   ² ³   √   ∑   ∏
+  Brackets:   {} or () or []
+  Symbols:    π (pi)  @ (stdin)   ° º (degrees to radians)
+  Lists:      1 2 3  or  1,2,3
+  Ranges:     1..10 or 1…10
+  Functions:  sqrt √   sum ∑   product prod ∏   factorial fact !   ln  log  exp
+              avg mean average x̄   median  mode  min  max  stdev  abs  round
+              floor  ceil  sin  cos  tan  asin  acos  atan  sinh  cosh  tanh
 
-Stdin can be complete expressions or lists of values. Lines of stdin are merged
-to form one list. Partial expressions are applied to stdin. Partials that start
-with an operator continue it and arguments that end with an operator or function
-take it as their last operand. @ explicitly references stdin: 'calc max@-min@' .
+  Stdin can be complete expressions or lists of values. Lines of stdin are
+  merged to form one list. Partial expressions are applied to value(s) from
+  stdin. Partials that start with an operator continue it and expressions that
+  end with an operator or function take it as their last operand. Stdin can be
+  explicitly referenced and used multiple times with @: {name} max@-min@
+
+  Lists and ranges are applied value by value: {1 2 3}x2 → 2 4 6. Lists return
+  one number per line. Adjacent terms multiply: 2π, 3√2, 2{1+1}. Group digits
+  with _ (1_000). Unmatched closing bracket encapsulates prior numbers: 12+5}/2
 
 Options:
-  -h, --help                     Show this help
-  -p, --precision=N|max          Decimal places for non-terminating results
-                                 (default 5; max = full f64 precision, or 100
-                                 digits in a precise build)
-  --pretty[=always|auto|SAMPLE]  Read and write numbers in the local style,
-                                 including digit grouping. always is the default,
-                                 auto only applies to terminal output, SAMPLE
-                                 explicitly sets the style, e.g. 1.234,5
-  -r, --rows                     Preserve rows: each line of stdin is treated as
-                                 its own list (not merged) and produces the same
-                                 number of output rows.
-  -V, --version                  Show version
+  -p N, --precision=N|max
+    Decimal places for non-terminating results (default: 5).
+    max = {max}
+
+  --pretty[=always|auto|never|SAMPLE]
+    Read and write numbers with digit grouping in the local style. No value
+    means 'always', 'auto' applies when output is a terminal, 'never' forces
+    off, SAMPLE explicitly sets the style, e.g. 1.234,5
+
+  -r, --rows
+    Preserve rows: each line of stdin is treated as its own list (not merged).
+
+  -h, --help
+    Print help.
+
+  -V, --version
+    Print version.
+
+Examples:
+  {name} 0.1+0.2            # Accurate decimal arithmetic
+  {name} {3x4}^2            # Shell-safe characters to avoid quoting/escaping
+  {name} 15+4+3}/2          # Unmatched closing bracket wraps everything prior
+  {name} avg 1,2,3,5,8      # Send lists to functions
+  seq 1 10 | {name} sum     # Receive lists from stdin
+  date +%s | {name} +3600   # Apply partial expressions to values from stdin
 
 See README at https://github.com/lcrilly/calc-cli";
+
+/// The help text for this build, under the name the program was run as, with
+/// headings styled when `styled` (see `styles`).
+fn usage(styled: bool) -> String {
+    let max = if cfg!(feature = "precise") {
+        "100 significant digits."
+    } else {
+        "full f64 precision (~16 significant digits)."
+    };
+    let name = cli::program_name();
+    let text = align_comments(&USAGE.replace("{name}", name).replace("{max}", max));
+    if styled { style_headings(&text, name) } else { text }
+}
+
+/// True when text written to a stream with this terminal status may be styled:
+/// only a terminal, and not when `NO_COLOR` is set or `TERM` is `dumb`.
+fn styles(is_terminal: bool) -> bool {
+    let set = |name| std::env::var_os(name).filter(|v| !v.is_empty());
+    is_terminal && set("NO_COLOR").is_none() && set("TERM").is_none_or(|t| t != "dumb")
+}
+
+const HEADING: &str = "\x1b[1;4m";
+const BOLD: &str = "\x1b[1m";
+const RESET: &str = "\x1b[0m";
+
+/// Makes headings bold and underlined: the first word of a line at column 0, when
+/// it ends with ':'. After `Usage:` the program's name is bold.
+fn style_headings(text: &str, name: &str) -> String {
+    text.lines()
+        .map(|line| {
+            let (word, rest) = line.split_once(' ').map_or((line, None), |(w, r)| (w, Some(r)));
+            if line.starts_with(' ') || !word.ends_with(':') {
+                return line.to_string();
+            }
+            match rest {
+                None => format!("{HEADING}{word}{RESET}"),
+                Some(rest) => {
+                    let rest = match rest.strip_prefix(name) {
+                        Some(after) if word == "Usage:" => format!("{BOLD}{name}{RESET}{after}"),
+                        _ => rest.to_string(),
+                    };
+                    format!("{HEADING}{word}{RESET} {rest}")
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Lines up the `#` comments in the examples, whatever length the program's name is.
+fn align_comments(text: &str) -> String {
+    let width = |s: &str| s.chars().count();
+    let code = |line: &str| line.split_once(" # ").map(|(code, _)| code.trim_end().to_string());
+    let column = text.lines().filter_map(code).map(|c| width(&c)).max().unwrap_or(0) + 3;
+    text.lines()
+        .map(|line| match (code(line), line.split_once(" # ")) {
+            (Some(code), Some((_, comment))) => format!("{code}{}# {comment}", " ".repeat(column - width(&code))),
+            _ => line.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 
 fn print(s: &str) -> io::Result<ExitCode> {
     writeln!(io::stdout(), "{s}")?;
@@ -68,16 +148,16 @@ fn print(s: &str) -> io::Result<ExitCode> {
 
 /// Reports an error, showing where it is in `source`.
 fn fail(error: &Error, source: &str) -> io::Result<ExitCode> {
-    eprintln!("calc: {}", error.in_source(source));
+    eprintln!("{}: {}", cli::program_name(), error.in_source(source));
     Ok(ExitCode::from(error.exit_code()))
 }
 
 fn run(args: &[String]) -> io::Result<ExitCode> {
     let (options, rest) = match cli::parse_options(args) {
-        Ok(Command::Help) => return print(USAGE),
+        Ok(Command::Help) => return print(&usage(styles(io::stdout().is_terminal()))),
         Ok(Command::Version) => {
             let build = if cfg!(feature = "precise") { " (precise)" } else { "" };
-            return print(&format!("calc {}{build}", env!("CARGO_PKG_VERSION")));
+            return print(&format!("{} {}{build}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION")));
         }
         Ok(Command::Run(options, rest)) => (options, rest),
         Err(e) => return fail(&e, ""),
@@ -102,7 +182,7 @@ fn run(args: &[String]) -> io::Result<ExitCode> {
 
     let stdin_is_terminal = io::stdin().is_terminal();
     if rest.is_empty() && stdin_is_terminal {
-        eprintln!("{USAGE}");
+        eprintln!("{}", usage(styles(io::stderr().is_terminal())));
         return Ok(ExitCode::from(2));
     }
 
@@ -149,7 +229,7 @@ fn main() -> ExitCode {
     let args: Vec<String> = match std::env::args_os().skip(1).map(|a| a.into_string()).collect() {
         Ok(args) => args,
         Err(_) => {
-            eprintln!("calc: arguments must be valid UTF-8 (check your locale)");
+            eprintln!("{}: arguments must be valid UTF-8 (check your locale)", cli::program_name());
             return ExitCode::from(2);
         }
     };
@@ -159,8 +239,33 @@ fn main() -> ExitCode {
         // The reader went away (e.g. `calc … | head`); nothing left to do.
         Err(e) if e.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("calc: {e}");
+            eprintln!("{}: {e}", cli::program_name());
             ExitCode::FAILURE
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn headings_are_styled() {
+        let text = "about calcx\n\nUsage: calcx [OPTIONS]\n\nOptions:\n  -h, --help\nSee README: here";
+        let styled = style_headings(text, "calcx");
+        let lines: Vec<&str> = styled.lines().collect();
+        assert_eq!(lines[0], "about calcx");
+        assert_eq!(lines[2], "\x1b[1;4mUsage:\x1b[0m \x1b[1mcalcx\x1b[0m [OPTIONS]");
+        assert_eq!(lines[4], "\x1b[1;4mOptions:\x1b[0m");
+        assert_eq!(lines[5], "  -h, --help");
+        assert_eq!(lines[6], "See README: here"); // "See" doesn't end with ':'
+    }
+
+    #[test]
+    fn every_heading_in_the_help_is_found() {
+        let styled = style_headings(&usage(false), cli::program_name());
+        for heading in ["Usage:", "Expressions:", "Options:", "Examples:"] {
+            assert!(styled.contains(&format!("{HEADING}{heading}{RESET}")), "{heading}");
         }
     }
 }

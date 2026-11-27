@@ -216,7 +216,7 @@ fn check_comma(chars: &[char], i: usize, space_before: bool, syntax: &Syntax) ->
     }
     if syntax.local_decimal == ',' {
         return Err(Error::new(format!(
-            "'{left},{right}' is ambiguous: calc reads '.' as the decimal mark, so write {left}.{right}, \
+            "'{left},{right}' is ambiguous: write {left}.{right} (with '.' as the decimal mark), \
              use '{left}, {right}' for a list, or --pretty to read local numbers"
         ))
         .at(span));
