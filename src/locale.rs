@@ -108,12 +108,12 @@ impl NumberFormat {
 }
 
 /// The user's preferred format, detected once. In order of precedence:
-/// `CALC_NUMBER_FORMAT` (an example), `LC_ALL`/`LC_NUMERIC` when set,
+/// `CALCX_NUMBER_FORMAT` (an example), `LC_ALL`/`LC_NUMERIC` when set,
 /// the macOS Language & Region settings, then `LANG`.
 pub fn detected() -> NumberFormat {
     static DETECTED: OnceLock<NumberFormat> = OnceLock::new();
     *DETECTED.get_or_init(|| {
-        if let Ok(example) = std::env::var("CALC_NUMBER_FORMAT")
+        if let Ok(example) = std::env::var("CALCX_NUMBER_FORMAT")
             && let Ok(format) = NumberFormat::from_example(&example)
         {
             return format;
@@ -147,7 +147,7 @@ fn posix_format() -> Option<NumberFormat> {
     #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd")))]
     const LC_NUMERIC: c_int = 1;
 
-    // SAFETY: calc is single-threaded when this runs, and the lconv strings are
+    // SAFETY: calcx is single-threaded when this runs, and the lconv strings are
     // copied out before anything else can touch the locale.
     unsafe {
         if setlocale(LC_NUMERIC, c"".as_ptr()).is_null() {

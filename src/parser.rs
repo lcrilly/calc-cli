@@ -61,7 +61,7 @@ impl Expression {
     }
 
     /// True when the expression starts with an operator, so it continues a value read from stdin.
-    /// A leading '-' only counts on a lone number: `calc 2x5 | calc -1` is 9, but `-1x2` is
+    /// A leading '-' only counts on a lone number: `calcx 2x5 | calcx -1` is 9, but `-1x2` is
     /// complete, so a negative number in a larger expression never waits on stdin.
     pub fn is_continuation(&self) -> bool {
         self.is_lone_negative()

@@ -9,13 +9,13 @@ struct Output {
     code: i32,
 }
 
-/// Runs calc with `args` and optional `stdin`, isolated from the user's locale settings.
+/// Runs calcx with `args` and optional `stdin`, isolated from the user's locale settings.
 fn calc_env(args: &[&str], stdin: Option<&str>, env: &[(&str, &str)]) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_calc"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_calcx"));
     command
         .args(args)
-        .env_remove("CALC_PRETTY")
-        .env_remove("CALC_NUMBER_FORMAT")
+        .env_remove("CALCX_PRETTY")
+        .env_remove("CALCX_NUMBER_FORMAT")
         .env("LC_ALL", "C")
         .envs(env.iter().copied())
         .stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() })
@@ -84,15 +84,15 @@ fn syntax_errors_come_before_stdin() {
     // Reported once, against the arguments, not once per line of input.
     let out = calc(&["x{2"], Some("1\n2\n3\n"));
     assert_eq!((out.stdout.as_str(), out.code), ("", 1));
-    assert_eq!(out.stderr, "calc: missing '}'\n  x{2\n   ^\n");
+    assert_eq!(out.stderr, "calcx: missing '}'\n  x{2\n   ^\n");
 }
 
 #[test]
 fn errors_show_where() {
-    assert_eq!(calc(&["2x{3+4"], None).stderr, "calc: missing '}'\n  2x{3+4\n    ^\n");
+    assert_eq!(calc(&["2x{3+4"], None).stderr, "calcx: missing '}'\n  2x{3+4\n    ^\n");
     let out = calc(&["12/"], Some("1\n0\n"));
     assert_eq!(out.stdout, "12\n");
-    assert_eq!(out.stderr, "calc: line 2: division by zero\n  12/\n  ^^^\n");
+    assert_eq!(out.stderr, "calcx: line 2: division by zero\n  12/\n  ^^^\n");
 }
 
 #[test]
@@ -152,7 +152,7 @@ fn ambiguous_numbers_are_errors() {
     assert!(calc(&["1", "000", "x", "3"], None).stderr.contains("digit grouping"));
     assert_eq!(ok(&["1_000x3"], None), "3000\n");
     // With a decimal-comma locale, 3,5 is suspicious too.
-    let out = calc_env(&["3,5"], None, &[("CALC_NUMBER_FORMAT", "1.234,5")]);
+    let out = calc_env(&["3,5"], None, &[("CALCX_NUMBER_FORMAT", "1.234,5")]);
     assert!(out.stderr.contains("'.' as the decimal mark"));
 }
 
@@ -162,13 +162,13 @@ fn pretty() {
     assert_eq!(ok(&["--pretty=1.234,5", "-p1", "1000π"], None), "3.141,6\n");
     assert_eq!(ok(&["--pretty=1,234.5", "+1"], Some("3,141.6\n")), "3,142.6\n");
     assert_eq!(ok(&["--pretty=1.234,5", "+1"], Some("3.141,6\n")), "3.142,6\n");
-    let env = [("CALC_NUMBER_FORMAT", "1.234,5")];
+    let env = [("CALCX_NUMBER_FORMAT", "1.234,5")];
     assert_eq!(calc_env(&["--pretty", "1234567/2"], None, &env).stdout, "617.283,5\n");
-    // CALC_PRETTY changes output only; auto means only to a terminal.
-    let env = [("CALC_NUMBER_FORMAT", "1,234.5"), ("CALC_PRETTY", "always")];
+    // CALCX_PRETTY changes output only; auto means only to a terminal.
+    let env = [("CALCX_NUMBER_FORMAT", "1,234.5"), ("CALCX_PRETTY", "always")];
     assert_eq!(calc_env(&["1234567"], None, &env).stdout, "1,234,567\n");
     assert!(calc_env(&["1,234"], None, &env).stderr.contains("ambiguous"));
-    let env = [("CALC_NUMBER_FORMAT", "1,234.5"), ("CALC_PRETTY", "auto")];
+    let env = [("CALCX_NUMBER_FORMAT", "1,234.5"), ("CALCX_PRETTY", "auto")];
     assert_eq!(calc_env(&["1234567"], None, &env).stdout, "1234567\n");
     // The C locale has no grouping.
     assert_eq!(ok(&["--pretty", "1234567"], None), "1234567\n");
@@ -186,7 +186,7 @@ fn shell_brace_expansion_is_caught() {
 #[test]
 fn help_uses_the_name_it_was_run_as() {
     let help = ok(&["--help"], None);
-    assert!(help.contains("Usage: calc [OPTIONS]"));
+    assert!(help.contains("Usage: calcx [OPTIONS]"));
     assert!(!help.contains('\x1b'), "piped help has no styling");
     let max = if cfg!(feature = "precise") { "max = 100 significant digits" } else { "max = full f64 precision" };
     assert!(help.contains(max), "{help}");
@@ -199,11 +199,11 @@ fn help_uses_the_name_it_was_run_as() {
 #[cfg(unix)]
 #[test]
 fn a_symlink_changes_the_name() {
-    let dir = std::env::temp_dir().join(format!("calc-test-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("calcx-test-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let link = dir.join("sum-it");
     let _ = std::fs::remove_file(&link);
-    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_calc"), &link).unwrap();
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_calcx"), &link).unwrap();
     let out = Command::new(&link).arg("2x{3").env("LC_ALL", "C").output().unwrap();
     let help = Command::new(&link).arg("--help").output().unwrap();
     std::fs::remove_dir_all(&dir).unwrap();

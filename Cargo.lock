@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "calc"
+name = "calcx"
 version = "0.3.0"
 dependencies = [
  "dashu-float",

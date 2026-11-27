@@ -1,10 +1,10 @@
 [package]
-name = "calc"
+name = "calcx"
 version = "0.3.0"
 edition = "2024"
 description = "Evaluate arithmetic expressions and lists of numbers without shell quoting"
 license = "MIT"
-repository = "https://github.com/lcrilly/calc-cli"
+repository = "https://github.com/lcrilly/calcx"
 
 [features]
 default = []

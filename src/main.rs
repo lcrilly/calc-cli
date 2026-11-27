@@ -77,7 +77,7 @@ Examples:
   seq 1 10 | {name} sum     # Receive lists from stdin
   date +%s | {name} +3600   # Apply partial expressions to values from stdin
 
-See README at https://github.com/lcrilly/calc-cli";
+See README at https://github.com/lcrilly/calcx";
 
 /// The help text for this build, under the name the program was run as, with
 /// headings styled when `styled` (see `styles`).
@@ -166,8 +166,8 @@ fn run(args: &[String]) -> io::Result<ExitCode> {
         return fail(&e, "");
     }
 
-    // CALC_PRETTY only changes output, so it never changes what a script's input means.
-    let env_when = std::env::var("CALC_PRETTY").ok().and_then(|v| When::parse(&v));
+    // CALCX_PRETTY only changes output, so it never changes what a script's input means.
+    let env_when = std::env::var("CALCX_PRETTY").ok().and_then(|v| When::parse(&v));
     let write_pretty = match options.pretty.map(|p| p.when).or(env_when).unwrap_or(When::Never) {
         When::Always => true,
         When::Auto => io::stdout().is_terminal(),
@@ -186,21 +186,21 @@ fn run(args: &[String]) -> io::Result<ExitCode> {
         return Ok(ExitCode::from(2));
     }
 
-    // Arguments are joined with spaces, which separate list elements: `calc 1 2 3`.
+    // Arguments are joined with spaces, which separate list elements: `calcx 1 2 3`.
     let source = rest.join(" ");
     let mut expression = match Expression::parse(&source, &syntax) {
         Ok(e) => e,
         Err(e) => return fail(&e, &source),
     };
     // Only read stdin when the arguments say so or are missing an operand, so
-    // `calc 1+2` in a `while read` loop doesn't swallow the loop's input.
+    // `calcx 1+2` in a `while read` loop doesn't swallow the loop's input.
     let incomplete = expression.is_continuation() || expression.awaits_operand();
     let reads_stdin = expression.is_empty() || expression.reads_stdin() || (!stdin_is_terminal && incomplete);
     if reads_stdin && stdin_is_terminal {
         return fail(&Error::usage("'@' reads from stdin, but nothing is piped in"), "");
     }
-    // A lone negative number continues stdin (`calc 2x5 | calc -1` is 9), but if stdin
-    // turns out to be empty it is just the number, so `calc $x` still works under cron.
+    // A lone negative number continues stdin (`calcx 2x5 | calcx -1` is 9), but if stdin
+    // turns out to be empty it is just the number, so `calcx $x` still works under cron.
     let if_empty = (reads_stdin && expression.is_lone_negative())
         .then(|| Expression::parse(&source, &syntax).and_then(Expression::compile).ok())
         .flatten();
@@ -236,7 +236,7 @@ fn main() -> ExitCode {
 
     match run(&args) {
         Ok(status) => status,
-        // The reader went away (e.g. `calc … | head`); nothing left to do.
+        // The reader went away (e.g. `calcx … | head`); nothing left to do.
         Err(e) if e.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("{}: {e}", cli::program_name());

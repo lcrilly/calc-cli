@@ -1,5 +1,5 @@
 //! Command line options. Options come first and end at the first argument that
-//! isn't one, or at `--`, so `calc -2` and `calc -pi` are expressions.
+//! isn't one, or at `--`, so `calcx -2` and `calcx -pi` are expressions.
 
 use std::path::Path;
 use std::sync::OnceLock;
@@ -40,7 +40,7 @@ impl When {
     }
 }
 
-/// `--pretty` as given on the command line; unlike `CALC_PRETTY` it also changes how input is read.
+/// `--pretty` as given on the command line; unlike `CALCX_PRETTY` it also changes how input is read.
 #[derive(Clone, Copy)]
 pub struct Pretty {
     pub when: When,

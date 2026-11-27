@@ -4,7 +4,7 @@
 //! * with `--features precise`, rationals of any size and decimal floats to any
 //!   precision, from the dashu crates (`precise`).
 //!
-//! Both offer the same interface, so the rest of calc doesn't know which it has.
+//! Both offer the same interface, so the rest of calcx doesn't know which it has.
 
 #[cfg(not(feature = "precise"))]
 mod native;

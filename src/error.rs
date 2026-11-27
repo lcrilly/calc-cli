@@ -1,7 +1,7 @@
 //! Errors remember where in the input they happened, so they can be shown in place:
 //!
 //! ```text
-//! calc: missing '}'
+//! calcx: missing '}'
 //!   2x{3+4
 //!     ^
 //! ```
