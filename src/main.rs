@@ -92,6 +92,14 @@ fn usage(styled: bool) -> String {
     if styled { style_headings(&text, name) } else { text }
 }
 
+/// What to print when run with nothing to evaluate: an error, the usage line, and
+/// where to find the rest, in the GNU style. The full help is on stdout via --help.
+fn usage_hint(styled: bool) -> String {
+    let name = cli::program_name();
+    let usage = usage(styled).lines().find(|line| line.contains("Usage:")).unwrap_or_default().to_string();
+    format!("{name}: no expression\n{usage}\nTry '{name} --help' for more information.")
+}
+
 /// True when text written to a stream with this terminal status may be styled:
 /// only a terminal, and not when `NO_COLOR` is set or `TERM` is `dumb`.
 fn styles(is_terminal: bool) -> bool {
@@ -182,7 +190,7 @@ fn run(args: &[String]) -> io::Result<ExitCode> {
 
     let stdin_is_terminal = io::stdin().is_terminal();
     if rest.is_empty() && stdin_is_terminal {
-        eprintln!("{}", usage(styles(io::stderr().is_terminal())));
+        eprintln!("{}", usage_hint(styles(io::stderr().is_terminal())));
         return Ok(ExitCode::from(2));
     }
 
@@ -259,6 +267,19 @@ mod tests {
         assert_eq!(lines[4], "\x1b[1;4mOptions:\x1b[0m");
         assert_eq!(lines[5], "  -h, --help");
         assert_eq!(lines[6], "See README: here"); // "See" doesn't end with ':'
+    }
+
+    #[test]
+    fn bare_invocation_points_to_help() {
+        let name = cli::program_name();
+        assert_eq!(
+            usage_hint(false),
+            format!(
+                "{name}: no expression\nUsage: {name} [OPTIONS] [EXPRESSION | PARTIAL EXPRESSION]\n\
+                 Try '{name} --help' for more information."
+            )
+        );
+        assert!(usage_hint(true).contains(&format!("{HEADING}Usage:{RESET} {BOLD}{name}{RESET}")));
     }
 
     #[test]
