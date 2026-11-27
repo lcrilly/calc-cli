@@ -1,2 +1,4 @@
 /target
 /.claude
+# snapcraft output
+*.snap

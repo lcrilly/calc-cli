@@ -109,7 +109,9 @@ impl NumberFormat {
 
 /// The user's preferred format, detected once. In order of precedence:
 /// `CALCX_NUMBER_FORMAT` (an example), `LC_ALL`/`LC_NUMERIC` when set,
-/// the macOS Language & Region settings, then `LANG`.
+/// the macOS Language & Region settings, then `LANG`. When the C library has no
+/// data for the locale (inside a snap, or a minimal container), the locale's name
+/// is used to guess its style instead.
 pub fn detected() -> NumberFormat {
     static DETECTED: OnceLock<NumberFormat> = OnceLock::new();
     *DETECTED.get_or_init(|| {
@@ -124,8 +126,38 @@ pub fn detected() -> NumberFormat {
         {
             return format;
         }
-        posix_format().unwrap_or(NumberFormat::PLAIN)
+        posix_format()
+            .or_else(|| locale_name().and_then(|name| named_format(&name)))
+            .unwrap_or(NumberFormat::PLAIN)
     })
+}
+
+/// The locale that applies to numbers: the first of `LC_ALL`, `LC_NUMERIC` and
+/// `LANG` that is set, as POSIX orders them.
+fn locale_name() -> Option<String> {
+    ["LC_ALL", "LC_NUMERIC", "LANG"].into_iter().find_map(|name| std::env::var(name).ok().filter(|v| !v.is_empty()))
+}
+
+/// A best guess at a locale's number style from its name (`de_DE.UTF-8`), matching
+/// what glibc gives for the common locales. `None` when the name isn't recognised.
+fn named_format(name: &str) -> Option<NumberFormat> {
+    let name = name.split(['.', '@']).next()?;
+    let (language, territory) = name.split_once('_').unwrap_or((name, ""));
+    let style = |example| NumberFormat::from_example(example).ok();
+    match (language, territory) {
+        (_, "IN") => style("12,34,567.8"),
+        ("de", "CH") => style("1’234.5"),
+        ("de" | "es" | "it" | "nl" | "pt" | "da" | "id" | "tr" | "el" | "ro" | "hr" | "sl" | "vi", _) => {
+            style("1.234,5")
+        }
+        (
+            "fr" | "ru" | "sv" | "fi" | "nb" | "nn" | "no" | "pl" | "cs" | "sk" | "uk" | "hu" | "bg" | "et" | "lt"
+            | "lv",
+            _,
+        ) => style("1\u{202f}234,5"),
+        ("en" | "ja" | "zh" | "ko" | "he" | "th" | "ms" | "ga" | "cy", _) => style("1,234.5"),
+        _ => None,
+    }
 }
 
 /// Asks the C library for the LC_NUMERIC locale (honouring LC_ALL, LC_NUMERIC, LANG).
@@ -260,6 +292,19 @@ mod tests {
         assert!(NumberFormat::from_example("1,234,").is_err());
         assert!(NumberFormat::from_example("1,234 567.5").is_err());
         assert!(NumberFormat::from_example("abc").is_err());
+    }
+
+    #[test]
+    fn named_locales() {
+        let named = |name| named_format(name).map(|f| f.apply(&Decimal::from_std("1234567.5")));
+        assert_eq!(named("de_DE.UTF-8").as_deref(), Some("1.234.567,5"));
+        assert_eq!(named("en_GB.UTF-8").as_deref(), Some("1,234,567.5"));
+        assert_eq!(named("en_IN").as_deref(), Some("12,34,567.5"));
+        assert_eq!(named("fr_FR.UTF-8@euro").as_deref(), Some("1\u{202f}234\u{202f}567,5"));
+        assert_eq!(named("de_CH.UTF-8").as_deref(), Some("1’234’567.5"));
+        assert_eq!(named("C.UTF-8"), None);
+        assert_eq!(named("POSIX"), None);
+        assert_eq!(named("xx_YY"), None);
     }
 
     #[test]

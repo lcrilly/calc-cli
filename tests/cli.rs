@@ -170,6 +170,11 @@ fn pretty() {
     assert!(calc_env(&["1,234"], None, &env).stderr.contains("ambiguous"));
     let env = [("CALCX_NUMBER_FORMAT", "1,234.5"), ("CALCX_PRETTY", "auto")];
     assert_eq!(calc_env(&["1234567"], None, &env).stdout, "1234567\n");
+    // A locale the C library has no data for (as inside a snap) is recognised by name.
+    if cfg!(target_os = "linux") {
+        let env = [("LC_ALL", "de_DE.UTF-8")];
+        assert_eq!(calc_env(&["--pretty", "1234567/2"], None, &env).stdout, "617.283,5\n");
+    }
     // The C locale has no grouping.
     assert_eq!(ok(&["--pretty", "1234567"], None), "1234567\n");
 }

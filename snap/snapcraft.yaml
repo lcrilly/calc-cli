@@ -1,0 +1,42 @@
+name: calcx
+base: core24
+version: '0.3.0'
+summary: Arithmetic on the command line and on lists of numbers, without quoting
+description: |
+  calcx evaluates arithmetic expressions given as arguments, with no shell
+  quoting needed:
+
+      calcx 2x{3+4}               → 14
+      calcx avg 3,4,8             → 5
+      seq 1 10 | calcx sum        → 55
+      date +%s | calcx +60x60x24  → tomorrow, in seconds
+
+  Pipe numbers in and apply partial expressions to them, use spreadsheet-style
+  functions on lists, and read and write numbers in your locale's style with
+  --pretty. Arithmetic is exact until a result is irrational; this build also
+  handles big numbers and arbitrary precision (calcx -p 50 √2).
+license: MIT
+website: https://github.com/lcrilly/calcx
+source-code: https://github.com/lcrilly/calcx
+issues: https://github.com/lcrilly/calcx/issues
+grade: stable
+# calcx only reads arguments and stdin and writes stdout, so it needs no interfaces.
+confinement: strict
+
+platforms:
+  amd64:
+  arm64:
+
+apps:
+  calcx:
+    command: bin/calcx
+
+parts:
+  calcx:
+    plugin: rust
+    source: .
+    rust-features: [precise]
+    override-build: |
+      craftctl default
+      # Run the tests on each architecture, so a broken build is never published.
+      cargo test --release --locked --features precise
